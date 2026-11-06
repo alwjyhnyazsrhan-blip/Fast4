@@ -72,6 +72,11 @@ class LocateGoAccessibilityService : AccessibilityService() {
             "slide to accept", "swipe to accept", "slide_to_accept", "swipe_to_accept", "drag to accept"
         )
 
+        // كلمات وأزرار القبول لاستبعادها عند استخراج اسم المتجر
+        private val ACCEPT_BUTTON_KEYWORDS = ACCEPT_SLIDER_KEYWORDS + listOf(
+            "قبول", "موافقة", "موافق", "تاكيد", "تأكيد", "قبول الطلب", "الموافقة", "accept"
+        )
+
         // معرّفات عناصر أشرطة القبول بالسحب المحتملة في الواجهات البرمجية
         private val ACCEPT_VIEW_IDS = listOf(
             "slide_to_accept", "swipe_to_accept", "slider", "swipe_btn", "swipe_view", "drag_to_accept",

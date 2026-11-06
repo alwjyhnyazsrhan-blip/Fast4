@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools"
-    package="com.locatego.driver">
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!-- 1. الشبكة والإنترنت للاتصال فائق السرعة بسيرفر Render المباشر -->
     <uses-permission android:name="android.permission.INTERNET" />
