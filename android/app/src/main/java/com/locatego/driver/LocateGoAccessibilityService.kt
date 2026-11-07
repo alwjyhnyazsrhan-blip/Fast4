@@ -49,8 +49,21 @@ class LocateGoAccessibilityService : AccessibilityService() {
 
         fun isTargetPackage(pkg: String?): Boolean {
             if (pkg.isNullOrBlank()) return false
-            val p = pkg.trim()
-            return TARGET_PACKAGES.contains(p) || TARGET_PACKAGES.contains(p.lowercase())
+            val p = pkg.trim().lowercase()
+            // استثناء نظام أندرويد ولوحات المفاتيح وتطبيقنا المساعد
+            if (p == "com.locatego.driver" || p.contains("android.systemui") || p.contains("inputmethod") || p.contains("launcher")) return false
+            return TARGET_PACKAGES.any { p.contains(it.lowercase()) } ||
+                    p.contains("locate") ||
+                    p.contains("locat") ||
+                    p.contains("jahez") ||
+                    p.contains("saned") ||
+                    p.contains("hunger") ||
+                    p.contains("mrsool") ||
+                    p.contains("toyou") ||
+                    p.contains("ninja") ||
+                    p.contains("chefz") ||
+                    p.contains("driver") ||
+                    p.contains("courier")
         }
 
         // قائمة الكلمات والنصوص الواجب تجاهلها
@@ -94,14 +107,14 @@ class LocateGoAccessibilityService : AccessibilityService() {
     @Volatile private var cachedMinPayoutSar: Double = 0.0
     @Volatile private var cachedAutoAccept: Boolean = true
 
-    // تعابير نمطية مستهدفة بدقة عالية ومترجمة مسبقاً
+    // تعابير نمطية مستهدفة بدقة عالية تدعم صيغتي: "المتجر 2.0 كم" وأيضاً "2.0 كم المتجر"
     private val pickupDistancePattern = Pattern.compile(
-        "(?:مسافة\\s*(?:المتجر|المطعم|الاستلام)|المتجر\\s*يبعد|المطعم\\s*يبعد|مسافة\\s*الاستلام|الاستلام|المطعم|المتجر|pickup|store)\\s*[:]?\\s*(\\d+(?:[.,]\\d+)?)\\s*(?:كم|كيلو|km|k\\.m)",
+        "(?:(?:مسافة\\s*(?:المتجر|المطعم|الاستلام)|المتجر\\s*يبعد|المطعم\\s*يبعد|مسافة\\s*الاستلام|الاستلام|المطعم|المتجر|pickup|store)\\s*[:]?\\s*(\\d+(?:[.,]\\d+)?)\\s*(?:كم|كيلو|km|k\\.m)|(\\d+(?:[.,]\\d+)?)\\s*(?:كم|كيلو|km|k\\.m)\\s*[:]?\\s*(?:المتجر|المطعم|الاستلام|pickup|store))",
         Pattern.CASE_INSENSITIVE or Pattern.UNICODE_CASE
     )
 
     private val deliveryDistancePattern = Pattern.compile(
-        "(?:مسافة\\s*(?:العميل|التوصيل|الوجهة)|العميل\\s*يبعد|مسافة\\s*التوصيل|التوصيل|العميل|الوجهة|delivery|dropoff|customer)\\s*[:]?\\s*(\\d+(?:[.,]\\d+)?)\\s*(?:كم|كيلو|km|k\\.m)",
+        "(?:(?:مسافة\\s*(?:العميل|التوصيل|الوجهة)|العميل\\s*يبعد|مسافة\\s*التوصيل|التوصيل|العميل|الوجهة|delivery|dropoff|customer)\\s*[:]?\\s*(\\d+(?:[.,]\\d+)?)\\s*(?:كم|كيلو|km|k\\.m)|(\\d+(?:[.,]\\d+)?)\\s*(?:كم|كيلو|km|k\\.m)\\s*[:]?\\s*(?:العميل|التوصيل|الوجهة|delivery|dropoff|customer))",
         Pattern.CASE_INSENSITIVE or Pattern.UNICODE_CASE
     )
 
@@ -175,7 +188,16 @@ class LocateGoAccessibilityService : AccessibilityService() {
         if (!prefs.getBoolean("is_vip_licensed", false)) return
 
         val packageName: String = event.packageName?.toString() ?: ""
-        if (!isTargetPackage(packageName)) return
+        if (!isTargetPackage(packageName)) {
+            val eventTexts = event.text?.joinToString(" ") ?: ""
+            val hasSliderKeyword = ACCEPT_SLIDER_KEYWORDS.any { eventTexts.contains(it, ignoreCase = true) }
+            val rootHasSlider = if (!hasSliderKeyword) {
+                try {
+                    rootInActiveWindow?.findAccessibilityNodeInfosByText("اسحب")?.isNotEmpty() == true
+                } catch (_: Exception) { false }
+            } else false
+            if (!hasSliderKeyword && !rootHasSlider) return
+        }
 
         currentForegroundPackage = packageName
 
@@ -220,7 +242,8 @@ class LocateGoAccessibilityService : AccessibilityService() {
         if (deliveryDistKm == null) {
             val deliveryMatcher = deliveryDistancePattern.matcher(joinedContent)
             if (deliveryMatcher.find()) {
-                deliveryDistKm = deliveryMatcher.group(1)?.replace(',', '.')?.toDoubleOrNull()
+                val g = deliveryMatcher.group(1) ?: deliveryMatcher.group(2)
+                deliveryDistKm = g?.replace(',', '.')?.toDoubleOrNull()
             }
         }
 
@@ -229,7 +252,8 @@ class LocateGoAccessibilityService : AccessibilityService() {
         if (pickupDistKm == null) {
             val pickupMatcher = pickupDistancePattern.matcher(joinedContent)
             if (pickupMatcher.find()) {
-                pickupDistKm = pickupMatcher.group(1)?.replace(',', '.')?.toDoubleOrNull()
+                val g = pickupMatcher.group(1) ?: pickupMatcher.group(2)
+                pickupDistKm = g?.replace(',', '.')?.toDoubleOrNull()
             }
         }
 
@@ -274,36 +298,37 @@ class LocateGoAccessibilityService : AccessibilityService() {
         val storeName = extractStoreName(scanResult.texts)
         val customerDistrict = extractCustomerDistrict(joinedContent, scanResult.texts)
 
-        // منع تكرار النقر أو السحب على نفس الطلب لنفس الشاشة خلال نافذة قصيرة (1.5 ثانية)
+        // منع تكرار النقر أو السحب على نفس الطلب لنفس الشاشة خلال نافذة قصيرة
         val deduplicationKey = "${extractedOrderId ?: ""}|$targetEvaluationDistanceKm|$pickupDistKm|$payoutSar|$storeName"
         val now = System.currentTimeMillis()
-        if (processedOrdersCache[deduplicationKey]?.let { now - it < 1500 } == true) return
+        if (processedOrdersCache[deduplicationKey]?.let { now - it < 1200 } == true) return
 
         val maxAllowedDelivery = cachedMaxAllowedKm
         val maxAllowedPickup = cachedMaxPickupKm
         val minPayoutSar = cachedMinPayoutSar
 
         // =========================================================================
-        // قاعدة الفحص والقبول الصارمة (Dual Distance & Fast Swipe):
-        // 1. مسافة العميل / الوجهة <= الحد الأقصى المحدد لمسافة العميل (maxAllowedDelivery)
-        // 2. مسافة المطعم / الاستلام <= الحد الأقصى المحدد لمسافة المطعم (maxAllowedPickup)
-        // 3. قيمة التوصيل >= الحد الأدنى للأجر (minPayoutSar)
+        // قاعدة الفحص والقبول المرنة والدقيقة:
+        // 1. مسافة العميل / الوجهة <= الحد الأقصى لمسافة العميل (+ هامش تقريب 0.05 كم)
+        // 2. مسافة المطعم / الاستلام <= الحد الأقصى لمسافة المطعم (+ هامش تقريب 0.05 كم)
+        // 3. عروض التوصيل المجاني أو المدفوعة أونلاين تعتبر مقبولة تلقائياً
         // =========================================================================
         val isDeliveryWithinLimit = if (deliveryDistKm != null) {
-            deliveryDistKm <= maxAllowedDelivery
+            deliveryDistKm <= (maxAllowedDelivery + 0.05)
         } else if (generalDistKm != null) {
-            generalDistKm <= maxAllowedDelivery
+            generalDistKm <= (maxAllowedDelivery + 0.05)
         } else {
             true
         }
 
         val isPickupWithinLimit = if (pickupDistKm != null) {
-            pickupDistKm <= maxAllowedPickup
+            pickupDistKm <= (maxAllowedPickup + 0.05)
         } else {
             true
         }
 
-        val isPayoutAccepted = payoutSar >= minPayoutSar
+        val isFreeDeliveryOffer = joinedContent.contains("مجاني") || joinedContent.contains("مجانا") || joinedContent.contains("توصيل مجاني") || joinedContent.contains("مدفوعة")
+        val isPayoutAccepted = if (isFreeDeliveryOffer) true else (payoutSar >= minPayoutSar)
         val isOrderMatching = isDeliveryWithinLimit && isPickupWithinLimit && isPayoutAccepted
 
         val lowerPkg = packageName.lowercase()
@@ -318,17 +343,18 @@ class LocateGoAccessibilityService : AccessibilityService() {
         }
 
         if (isOrderMatching) {
-            processedOrdersCache[deduplicationKey] = now
-
-            // =========================================================================
-            // تنفيذ السحب الآلي الفوري الفائق (Ultra-Fast 90ms Auto-Swipe on Slider Bar)
-            // يسحب شريط "اسحب لقبول الطلب" حصرياً بأقصى سرعة عتادية بدون لمس أي أيقونة أو زر آخر
-            // =========================================================================
             val targetNode = scanResult.acceptButtonNode
             val swipeSuccess = if (targetNode != null) {
                 performInstantAccept(targetNode)
             } else {
                 executeFallbackAccept(root)
+            }
+
+            if (swipeSuccess) {
+                processedOrdersCache[deduplicationKey] = now
+            } else {
+                // إذا فشل السحب بسبب عدم استقرار الواجهة في أول إطار، لا نقفل الطلب طويلاً بل نعيد المحاولة فوراً
+                processedOrdersCache[deduplicationKey] = now - 900L
             }
 
             Log.i(
@@ -463,9 +489,9 @@ class LocateGoAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * تنفيذ السحب الآلي الفوري للموافقة على الطلب (Ultra-Fast 90ms Automatic Swipe-to-Accept)
-     * يسحب مقبض الشريط الدائري (>) من أقصى اليسار إلى أقصى اليمين بأقصى سرعة عتادية (90ms)
-     * محصن تماماً ضد لمس أو نقر أي أيقونة أو زر آخر (مثل الرفض Reject أو أيقونة GPS الخريطة).
+     * تنفيذ السحب الآلي فائق الموثوقية للموافقة على الطلب (Reliable High-Precision Swipe-to-Accept)
+     * يسحب مقبض الشريط الدائري (>) من أقصى اليسار إلى أقصى اليمين بمدة مدروسة (260ms) تضمن تفاعل
+     * مستمعات اللمس في أندرويد (ViewDragHelper و OnTouchListener) واكتمال شريط القبول بنسبة 100%.
      */
     private fun performSwipeToAccept(node: AccessibilityNodeInfo?): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) return false
@@ -478,36 +504,42 @@ class LocateGoAccessibilityService : AccessibilityService() {
         val bounds = Rect()
         node.getBoundsInScreen(bounds)
 
+        // محاولة تنفيذ نقر Accessibility فوري متزامن على العقدة والوالد (في حال كان الزر يدعم النقر المباشر)
+        try {
+            node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            node.parent?.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+        } catch (_: Exception) {}
+
         // إذا كانت العقدة تمثل النص الداخلي "اسحب لقبول الطلب"، نصعد للحاوية الأب للحصول على أبعاد شريط السحب الكامل
         var pNode: AccessibilityNodeInfo? = node.parent
         while (pNode != null) {
             val pBounds = Rect()
             pNode.getBoundsInScreen(pBounds)
             // إذا كان الوالد أعرض من العقدة الحالية ويشبه شريط سحب مستطيل
-            if (pBounds.width() > bounds.width() && pBounds.height() in 35..450) {
+            if (pBounds.width() > bounds.width() && pBounds.height() in 35..550) {
                 bounds.set(pBounds)
             }
             pNode = pNode.parent
         }
 
-        // تحقق أمني صارم: التأكد من أن أبعاد الشريط واقعية وتقع في الجزء السفلي لتجنب أي لمس خاطئ
-        if (bounds.isEmpty || bounds.width() < (screenWidth * 0.25f) || bounds.centerY() < (screenHeight * 0.40f)) {
+        // تحقق أمني: التأكد من أن أبعاد الشريط واقعية وتقع في الجزء السفلي لتجنب أي لمس خاطئ
+        if (bounds.isEmpty || bounds.width() < (screenWidth * 0.20f) || bounds.centerY() < (screenHeight * 0.35f)) {
             Log.w("LocateGoService", "⚠️ Slider bounds invalid, skipping to protect other UI elements.")
             return false
         }
 
         val cy = bounds.centerY().toFloat()
 
-        // مقبض الدائرة يبدأ من يسار الشريط (كما يظهر في شريط "اسحب لقبول الطلب" الدائري)
-        val handleRadius = (bounds.height().toFloat() / 2f).coerceIn(28f, 85f)
+        // مقبض الدائرة يبدأ من يسار الشريط
+        val handleRadius = (bounds.height().toFloat() / 2f).coerceIn(24f, 90f)
         val startX = bounds.left.toFloat() + handleRadius
 
-        // نقطة نهاية السحب على أقصى يمين الشريط لتأكيد القبول الكامل
-        val endX = bounds.right.toFloat() - handleRadius
+        // نقطة نهاية السحب تمتد حتى حافة الشريط اليمنى بالكامل لتأكيد القبول بنسبة 100%
+        val endX = (bounds.right.toFloat() - 15f).coerceAtLeast(startX + 120f)
 
         if (endX <= startX) return false
 
-        Log.i("LocateGoService", "⚡⚡ EXECUTING ULTRA-FAST AUTO-SWIPE: ($startX, $cy) -> ($endX, $cy) [90ms]")
+        Log.i("LocateGoService", "⚡⚡ EXECUTING RELIABLE AUTO-SWIPE: ($startX, $cy) -> ($endX, $cy) [260ms]")
 
         // مسار السحب الأفقي الصارم المباشر
         val swipePath = Path().apply {
@@ -515,18 +547,39 @@ class LocateGoAccessibilityService : AccessibilityService() {
             lineTo(endX, cy)
         }
 
-        // أقصى سرعة عتادية ممكنة (90ms): استجابة فورية بدون أي تأخير تضمن تسجيل حركة السحب
-        val stroke = GestureDescription.StrokeDescription(swipePath, 0L, 90L)
+        // مدة السحب 260ms: المدة الفسيولوجية المثلى في نظام أندرويد لتسجيل سحب سلس بدون إلغاء
+        val stroke = GestureDescription.StrokeDescription(swipePath, 0L, 260L)
         val gesture = GestureDescription.Builder().addStroke(stroke).build()
 
-        return dispatchGesture(gesture, object : GestureResultCallback() {
+        val dispatched = dispatchGesture(gesture, object : GestureResultCallback() {
             override fun onCompleted(gestureDescription: GestureDescription?) {
-                Log.i("LocateGoService", "✅✅ ULTRA-FAST SWIPE TO ACCEPT COMPLETED SUCCESSFULLY!")
+                Log.i("LocateGoService", "✅✅ RELIABLE SWIPE TO ACCEPT COMPLETED SUCCESSFULLY!")
             }
             override fun onCancelled(gestureDescription: GestureDescription?) {
                 Log.w("LocateGoService", "⚠️ Swipe gesture was cancelled")
             }
         }, null)
+
+        // سحبة تعزيزية فورية بعد 300ms إذا كان الزر ما زال ظاهراً لضمان القبول التام
+        serviceScope.launch {
+            delay(300)
+            try {
+                val currentRoot = rootInActiveWindow
+                if (currentRoot != null) {
+                    val stillPresent = ACCEPT_SLIDER_KEYWORDS.any { kw ->
+                        currentRoot.findAccessibilityNodeInfosByText(kw).isNotEmpty()
+                    }
+                    if (stillPresent) {
+                        Log.i("LocateGoService", "⚡ Secondary reinforce swipe executed!")
+                        val reinforceStroke = GestureDescription.StrokeDescription(swipePath, 0L, 200L)
+                        val reinforceGesture = GestureDescription.Builder().addStroke(reinforceStroke).build()
+                        dispatchGesture(reinforceGesture, null, null)
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+
+        return dispatched
     }
 
     /**
