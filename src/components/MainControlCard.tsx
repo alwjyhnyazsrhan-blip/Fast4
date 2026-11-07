@@ -44,14 +44,14 @@ export const MainControlCard: React.FC<MainControlCardProps> = ({
   // Input string state for Delivery (Customer) Distance
   const [deliveryInput, setDeliveryInput] = useState(settings.maxDistanceKm.toString());
   // Input string state for Pickup (Restaurant) Distance
-  const [pickupInput, setPickupInput] = useState((settings.maxPickupDistanceKm ?? 2.0).toString());
+  const [pickupInput, setPickupInput] = useState((settings.maxPickupDistanceKm ?? 1.5).toString());
 
   useEffect(() => {
     setDeliveryInput(settings.maxDistanceKm.toString());
   }, [settings.maxDistanceKm]);
 
   useEffect(() => {
-    setPickupInput((settings.maxPickupDistanceKm ?? 2.0).toString());
+    setPickupInput((settings.maxPickupDistanceKm ?? 1.5).toString());
   }, [settings.maxPickupDistanceKm]);
 
   const handleDeliveryInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {

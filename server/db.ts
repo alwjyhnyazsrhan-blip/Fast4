@@ -58,8 +58,8 @@ export interface DatabaseSchema {
 }
 
 const DEFAULT_SETTINGS: DeviceSettings = {
-  maxDistanceKm: 2.5,
-  maxPickupDistanceKm: 1.0,
+  maxDistanceKm: 3.0,
+  maxPickupDistanceKm: 1.5,
   autoAccept: true,
   soundAlerts: true,
   minPayoutSar: 0.0,

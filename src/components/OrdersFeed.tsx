@@ -42,7 +42,7 @@ interface OrdersFeedProps {
 export const OrdersFeed: React.FC<OrdersFeedProps> = ({
   orders,
   maxDistanceKm,
-  maxPickupDistanceKm = 2.0,
+  maxPickupDistanceKm = 1.5,
   isRunning,
   onClearOrders,
   onTestCustomOrder,

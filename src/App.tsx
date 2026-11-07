@@ -22,8 +22,8 @@ import {
 export default function App() {
   const [deviceId, setDeviceIdState] = useState<string>(getActiveDeviceId());
   const [settings, setSettings] = useState<LocateGoSettings>({
-    maxDistanceKm: 2.5,
-    maxPickupDistanceKm: 1.0,
+    maxDistanceKm: 3.0,
+    maxPickupDistanceKm: 1.5,
     autoAccept: true,
     soundAlerts: true,
     minPayoutSar: 15.0,
@@ -265,7 +265,7 @@ export default function App() {
           setSettings((prev) => ({
             ...prev,
             maxDistanceKm: parsed.maxDistanceKm ?? prev.maxDistanceKm,
-            maxPickupDistanceKm: parsed.maxPickupDistanceKm ?? prev.maxPickupDistanceKm ?? 1.0,
+            maxPickupDistanceKm: parsed.maxPickupDistanceKm ?? prev.maxPickupDistanceKm ?? 1.5,
             autoAccept: parsed.autoAccept ?? prev.autoAccept,
             soundAlerts: parsed.soundAlerts ?? prev.soundAlerts,
             minPayoutSar: parsed.minPayoutSar ?? prev.minPayoutSar,
@@ -778,14 +778,14 @@ export default function App() {
           <LiveStatusIndicator
             status={status}
             maxDistanceKm={settings.maxDistanceKm}
-            maxPickupDistanceKm={settings.maxPickupDistanceKm ?? 1.0}
+            maxPickupDistanceKm={settings.maxPickupDistanceKm ?? 1.5}
           />
 
           {/* 5. Detected Orders Feed & History */}
           <OrdersFeed
             orders={orders}
             maxDistanceKm={settings.maxDistanceKm}
-            maxPickupDistanceKm={settings.maxPickupDistanceKm ?? 1.0}
+            maxPickupDistanceKm={settings.maxPickupDistanceKm ?? 1.5}
             isRunning={status.isRunning}
             onClearOrders={handleClearOrders}
             onTestCustomOrder={handleProcessOrder}
@@ -837,7 +837,7 @@ export default function App() {
           <div className="flex items-center gap-3 text-slate-400 font-mono">
             <span>حد العميل: {settings.maxDistanceKm} كم</span>
             <span>•</span>
-            <span>حد المطعم: {settings.maxPickupDistanceKm ?? 1.0} كم</span>
+            <span>حد المطعم: {settings.maxPickupDistanceKm ?? 1.5} كم</span>
             <span>•</span>
             <span>الطلبات: {orders.length}</span>
             <span>•</span>

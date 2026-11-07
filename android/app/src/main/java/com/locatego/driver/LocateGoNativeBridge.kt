@@ -26,8 +26,8 @@ class LocateGoNativeBridge(private val activity: MainActivity) {
     @JavascriptInterface
     fun getSettingsJson(): String {
         val json = JSONObject().apply {
-            put("maxDistanceKm", prefs.getFloat("max_distance_km", 2.5f).toDouble())
-            put("maxPickupDistanceKm", prefs.getFloat("max_pickup_distance_km", 1.0f).toDouble())
+            put("maxDistanceKm", prefs.getFloat("max_distance_km", 3.0f).toDouble())
+            put("maxPickupDistanceKm", prefs.getFloat("max_pickup_distance_km", 1.5f).toDouble())
             put("autoAccept", prefs.getBoolean("auto_accept", true))
             put("soundAlerts", prefs.getBoolean("sound_alerts", true))
             put("minPayoutSar", prefs.getFloat("min_payout_sar", 0.0f).toDouble())

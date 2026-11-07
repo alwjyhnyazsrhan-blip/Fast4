@@ -167,8 +167,8 @@ class LocateGoAccessibilityService : AccessibilityService() {
 
     private fun initLiveSettingsCache() {
         val prefs = getSharedPreferences("locate_go_prefs", Context.MODE_PRIVATE)
-        cachedMaxAllowedKm = prefs.getFloat("max_distance_km", 2.5f).toDouble()
-        cachedMaxPickupKm = prefs.getFloat("max_pickup_distance_km", 1.0f).toDouble()
+        cachedMaxAllowedKm = prefs.getFloat("max_distance_km", 3.0f).toDouble()
+        cachedMaxPickupKm = prefs.getFloat("max_pickup_distance_km", 1.5f).toDouble()
         cachedMinPayoutSar = prefs.getFloat("min_payout_sar", 0.0f).toDouble()
         cachedAutoAccept = prefs.getBoolean("auto_accept", true)
         cachedSwipeSpeedMs = prefs.getInt("swipe_speed_ms", 100).toLong()
@@ -177,8 +177,8 @@ class LocateGoAccessibilityService : AccessibilityService() {
 
         sharedPrefsListener = SharedPreferences.OnSharedPreferenceChangeListener { sp, key ->
             when (key) {
-                "max_distance_km" -> cachedMaxAllowedKm = sp.getFloat("max_distance_km", 2.5f).toDouble()
-                "max_pickup_distance_km" -> cachedMaxPickupKm = sp.getFloat("max_pickup_distance_km", 1.0f).toDouble()
+                "max_distance_km" -> cachedMaxAllowedKm = sp.getFloat("max_distance_km", 3.0f).toDouble()
+                "max_pickup_distance_km" -> cachedMaxPickupKm = sp.getFloat("max_pickup_distance_km", 1.5f).toDouble()
                 "min_payout_sar" -> cachedMinPayoutSar = sp.getFloat("min_payout_sar", 0.0f).toDouble()
                 "auto_accept" -> cachedAutoAccept = sp.getBoolean("auto_accept", true)
                 "swipe_speed_ms" -> cachedSwipeSpeedMs = sp.getInt("swipe_speed_ms", 100).toLong()
@@ -317,21 +317,21 @@ class LocateGoAccessibilityService : AccessibilityService() {
         val minPayoutSar = cachedMinPayoutSar
 
         // =========================================================================
-        // قاعدة الفحص والقبول المرنة والدقيقة:
-        // 1. مسافة العميل / الوجهة <= الحد الأقصى لمسافة العميل (+ هامش تقريب 0.05 كم)
-        // 2. مسافة المطعم / الاستلام <= الحد الأقصى لمسافة المطعم (+ هامش تقريب 0.05 كم)
+        // قاعدة الفحص والقبول الصارمة والدقيقة:
+        // 1. مسافة العميل / الوجهة <= الحد الأقصى لمسافة العميل (3.0 كم أو أقل)
+        // 2. مسافة المطعم / الاستلام <= الحد الأقصى لمسافة المطعم (1.5 كم أو أقل)
         // 3. عروض التوصيل المجاني أو المدفوعة أونلاين تعتبر مقبولة تلقائياً
         // =========================================================================
         val isDeliveryWithinLimit = if (deliveryDistKm != null) {
-            deliveryDistKm <= (maxAllowedDelivery + 0.05)
+            deliveryDistKm <= maxAllowedDelivery
         } else if (generalDistKm != null) {
-            generalDistKm <= (maxAllowedDelivery + 0.05)
+            generalDistKm <= maxAllowedDelivery
         } else {
             true
         }
 
         val isPickupWithinLimit = if (pickupDistKm != null) {
-            pickupDistKm <= (maxAllowedPickup + 0.05)
+            pickupDistKm <= maxAllowedPickup
         } else {
             true
         }
