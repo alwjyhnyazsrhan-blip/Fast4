@@ -44,6 +44,7 @@ export interface LocateGoSettings {
   swipeSpeedMs?: number;
   tapIntervalMs?: number;
   enableCustomInterval?: boolean;
+  orderCardLanguage?: 'ar' | 'en';
 }
 
 export interface DriverLocation {

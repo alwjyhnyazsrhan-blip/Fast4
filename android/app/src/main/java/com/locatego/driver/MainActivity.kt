@@ -14,6 +14,7 @@ import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
 import android.util.Log
+import android.view.KeyEvent
 import android.view.View
 import android.webkit.*
 import android.widget.FrameLayout
@@ -94,6 +95,15 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         syncStateToWeb()
+    }
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        if (keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
+            // "لفتح نافذة مساعد لوكيت، افتح تطبيق لوكيت واضغط ضغطة واحدة على زر خفض الصوت."
+            webView.evaluateJavascript("window.onVolumeDownShortcut && window.onVolumeDownShortcut();", null)
+            return true
+        }
+        return super.onKeyDown(keyCode, event)
     }
 
     @SuppressLint("SetJavaScriptEnabled")

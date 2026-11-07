@@ -7,6 +7,9 @@ import { AndroidNativeControls } from './components/AndroidNativeControls';
 import { VipLockScreen } from './components/VipLockScreen';
 import { SecurityShieldBadge } from './components/SecurityShieldBadge';
 import { LocateAssistantModal } from './components/LocateAssistantModal';
+import { LocateHelperDashboard } from './components/LocateHelperDashboard';
+import { Language } from './utils/i18n';
+import { Radio, ChevronDown, ChevronUp } from 'lucide-react';
 import { LocateGoSettings, LocateGoStatus, OrderItem, AppSource } from './types';
 import { INITIAL_ORDERS, APP_CONFIG, resolveAppSource } from './utils/sampleData';
 import { soundManager } from './utils/audio';
@@ -21,6 +24,11 @@ import {
 
 export default function App() {
   const [deviceId, setDeviceIdState] = useState<string>(getActiveDeviceId());
+  const [currentLang, setCurrentLang] = useState<Language>('ar');
+  const [activePlanName, setActivePlanName] = useState<string>('تجريبي 3 أيام');
+  const [subscriptionDate, setSubscriptionDate] = useState<string>('07/11/2026');
+  const [expiryDate, setExpiryDate] = useState<string>('08/11/2026');
+  const [showAdvancedTools, setShowAdvancedTools] = useState<boolean>(false);
   const [settings, setSettings] = useState<LocateGoSettings>({
     maxDistanceKm: 3.0,
     maxPickupDistanceKm: 1.5,
@@ -96,6 +104,16 @@ export default function App() {
     return () => {
       window.removeEventListener('vip_unlocked', handleVipEvent);
       delete (window as any).onVipUnlocked;
+    };
+  }, []);
+
+  // Listen for Volume Down button shortcut from Android native shell
+  useEffect(() => {
+    (window as any).onVolumeDownShortcut = () => {
+      setShowAssistantModal((prev) => !prev);
+    };
+    return () => {
+      delete (window as any).onVolumeDownShortcut;
     };
   }, []);
 
@@ -714,9 +732,21 @@ export default function App() {
     return (
       <VipLockScreen
         initialError={terminationNotice}
-        onUnlock={(code) => {
+        lang={currentLang}
+        onLanguageChange={setCurrentLang}
+        onUnlock={(code, planName, expiry) => {
           setTerminationNotice(null);
           setVipCode(code);
+          if (planName) setActivePlanName(planName);
+          if (expiry) {
+            try {
+              const d = new Date(expiry);
+              const formatted = `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+              setExpiryDate(formatted);
+            } catch {
+              setExpiryDate(expiry);
+            }
+          }
           setIsVipUnlocked(true);
           const bridge = getNativeBridge();
           if (bridge && typeof bridge.setVipLicensed === 'function') {
@@ -741,57 +771,90 @@ export default function App() {
         lastHeartbeatAt={lastHeartbeatAt}
         remainingHours={remainingHours}
         onRelock={() => {
-          handleEmergencyTermination('user_relock', 'تم قفل التطبيق يدوياً والعودة لشاشة الدخول');
+          handleEmergencyTermination('user_relock', currentLang === 'ar' ? 'تم قفل التطبيق يدوياً والعودة لشاشة الدخول' : 'Application locked manually');
         }}
       />
 
       {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 py-6 sm:px-6 space-y-6">
+      <main className="flex-1 max-w-4xl w-full mx-auto px-4 py-6 sm:px-6 space-y-6">
         
-        {/* Main Driver Dashboard */}
-        <div className="space-y-6 animate-fadeIn">
-          {/* 1. Security & Anti-Reverse Engineering Protection Shield (ProGuard / R8 & API HMAC) */}
-          <SecurityShieldBadge currentDeviceId={deviceId} />
+        {/* 1. Main Screen matching Video 2: LocateHelperDashboard */}
+        <LocateHelperDashboard
+          status={status}
+          lang={currentLang}
+          onLanguageChange={setCurrentLang}
+          onTogglePower={handleTogglePower}
+          onOpenAssistantModal={() => setShowAssistantModal(true)}
+          onLogout={() => {
+            handleEmergencyTermination('user_logout', currentLang === 'ar' ? 'تم تسجيل الخروج بنجاح' : 'Logged out successfully');
+          }}
+          subscriptionDate={subscriptionDate}
+          expiryDate={expiryDate}
+          remainingHours={remainingHours}
+          vipCode={vipCode}
+          planName={activePlanName}
+        />
 
-          {/* 2. Android Native Integration Controls (Single App Mode) */}
-          <AndroidNativeControls
-            settings={settings}
-            status={status}
-            onTogglePower={handleTogglePower}
-            onUpdateSettings={handleUpdateSettings}
-          />
-
-          {/* 3. Main Controls: Master Start/Stop & Dual Distance Thresholds */}
-          <MainControlCard
-            settings={settings}
-            status={status}
-            onTogglePower={handleTogglePower}
-            onUpdateMaxDistance={handleUpdateMaxDistance}
-            onUpdateMaxPickupDistance={handleUpdateMaxPickupDistance}
-            onUpdateSettings={handleUpdateSettings}
-            onGetLiveLocation={handleGetLiveGPSLocation}
-            isLocating={isLocating}
-            onOpenAssistantModal={() => setShowAssistantModal(true)}
-          />
-
-          {/* 4. Live Status & Diagnostics Indicator */}
-          <LiveStatusIndicator
-            status={status}
-            maxDistanceKm={settings.maxDistanceKm}
-            maxPickupDistanceKm={settings.maxPickupDistanceKm ?? 1.5}
-          />
-
-          {/* 5. Detected Orders Feed & History */}
-          <OrdersFeed
-            orders={orders}
-            maxDistanceKm={settings.maxDistanceKm}
-            maxPickupDistanceKm={settings.maxPickupDistanceKm ?? 1.5}
-            isRunning={status.isRunning}
-            onClearOrders={handleClearOrders}
-            onTestCustomOrder={handleProcessOrder}
-            currentDeviceId={deviceId}
-          />
+        {/* Collapsible toggle for Advanced Tools & Live Orders Radar */}
+        <div className="max-w-md mx-auto pt-2">
+          <button
+            onClick={() => setShowAdvancedTools(!showAdvancedTools)}
+            className="w-full py-2.5 px-4 rounded-2xl bg-slate-900/70 hover:bg-slate-800/80 border border-slate-800 text-slate-400 hover:text-slate-200 text-xs font-bold flex items-center justify-between transition-all cursor-pointer shadow-sm"
+          >
+            <div className="flex items-center gap-2">
+              <Radio className="w-3.5 h-3.5 text-cyan-400" />
+              <span>{currentLang === 'ar' ? 'الأدوات المتقدمة ورادار الطلبات المباشرة' : 'Advanced Tools & Live Order Radar'}</span>
+            </div>
+            {showAdvancedTools ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+          </button>
         </div>
+
+        {/* Detailed Live Radar & Diagnostic Tools (Visible when toggled) */}
+        {showAdvancedTools && (
+          <div className="space-y-6 animate-fadeIn pt-2">
+            {/* 1. Security & Anti-Reverse Engineering Protection Shield (ProGuard / R8 & API HMAC) */}
+            <SecurityShieldBadge currentDeviceId={deviceId} />
+
+            {/* 2. Android Native Integration Controls (Single App Mode) */}
+            <AndroidNativeControls
+              settings={settings}
+              status={status}
+              onTogglePower={handleTogglePower}
+              onUpdateSettings={handleUpdateSettings}
+            />
+
+            {/* 3. Main Controls: Master Start/Stop & Dual Distance Thresholds */}
+            <MainControlCard
+              settings={settings}
+              status={status}
+              onTogglePower={handleTogglePower}
+              onUpdateMaxDistance={handleUpdateMaxDistance}
+              onUpdateMaxPickupDistance={handleUpdateMaxPickupDistance}
+              onUpdateSettings={handleUpdateSettings}
+              onGetLiveLocation={handleGetLiveGPSLocation}
+              isLocating={isLocating}
+              onOpenAssistantModal={() => setShowAssistantModal(true)}
+            />
+
+            {/* 4. Live Status & Diagnostics Indicator */}
+            <LiveStatusIndicator
+              status={status}
+              maxDistanceKm={settings.maxDistanceKm}
+              maxPickupDistanceKm={settings.maxPickupDistanceKm ?? 1.5}
+            />
+
+            {/* 5. Detected Orders Feed & History */}
+            <OrdersFeed
+              orders={orders}
+              maxDistanceKm={settings.maxDistanceKm}
+              maxPickupDistanceKm={settings.maxPickupDistanceKm ?? 1.5}
+              isRunning={status.isRunning}
+              onClearOrders={handleClearOrders}
+              onTestCustomOrder={handleProcessOrder}
+              currentDeviceId={deviceId}
+            />
+          </div>
+        )}
 
       </main>
 
@@ -821,6 +884,12 @@ export default function App() {
               onTogglePower={handleTogglePower}
               onUpdateSettings={handleUpdateSettings}
               isFloating={true}
+              lang={currentLang}
+              onLanguageChange={setCurrentLang}
+              onLogout={() => {
+                setShowAssistantModal(false);
+                handleEmergencyTermination('user_logout', currentLang === 'ar' ? 'تم تسجيل الخروج بنجاح' : 'Logged out successfully');
+              }}
             />
           </div>
         </div>

@@ -1,6 +1,7 @@
-import React from 'react';
-import { X, MapPin, Zap, Sliders, Timer, Sparkles } from 'lucide-react';
+import React, { useState } from 'react';
+import { X, Check } from 'lucide-react';
 import { LocateGoSettings, LocateGoStatus } from '../types';
+import { Language, translations } from '../utils/i18n';
 
 interface LocateAssistantModalProps {
   settings: LocateGoSettings;
@@ -9,6 +10,9 @@ interface LocateAssistantModalProps {
   onTogglePower: () => void;
   onUpdateSettings: (newSettings: Partial<LocateGoSettings>) => void;
   isFloating?: boolean;
+  lang?: Language;
+  onLanguageChange?: (lang: Language) => void;
+  onLogout?: () => void;
 }
 
 export const LocateAssistantModal: React.FC<LocateAssistantModalProps> = ({
@@ -18,13 +22,20 @@ export const LocateAssistantModal: React.FC<LocateAssistantModalProps> = ({
   onTogglePower,
   onUpdateSettings,
   isFloating = false,
+  lang = 'ar',
+  onLanguageChange,
+  onLogout,
 }) => {
+  const t = translations[lang];
+  const [saveToast, setSaveToast] = useState<boolean>(false);
+
   const isAutoAcceptActive = settings.autoAccept && status.isRunning;
   const currentPickupKm = settings.maxPickupDistanceKm ?? 1.5;
   const currentDeliveryKm = settings.maxDistanceKm ?? 3.0;
   const currentSwipeSpeed = settings.swipeSpeedMs ?? 100;
   const currentTapInterval = settings.tapIntervalMs ?? 10;
   const isCustomIntervalEnabled = settings.enableCustomInterval ?? false;
+  const currentCardLang = settings.orderCardLanguage ?? lang;
 
   const handleAdjustPickup = (delta: number) => {
     const next = Math.max(0.2, Math.min(25, Math.round((currentPickupKm + delta) * 10) / 10));
@@ -45,40 +56,95 @@ export const LocateAssistantModal: React.FC<LocateAssistantModalProps> = ({
     onUpdateSettings({ tapIntervalMs: clamped });
   };
 
+  const handleCardLangChange = (selectedLang: 'ar' | 'en') => {
+    onUpdateSettings({ orderCardLanguage: selectedLang });
+  };
+
+  const handleSaveSettings = () => {
+    // Show green bottom toast
+    setSaveToast(true);
+    setTimeout(() => {
+      setSaveToast(false);
+      if (onClose) onClose();
+    }, 1800);
+  };
+
   return (
     <div
-      className={`w-full max-w-md mx-auto bg-[#131b34]/95 backdrop-blur-xl border border-indigo-500/30 rounded-3xl p-5 shadow-2xl text-white font-sans select-none ${
-        isFloating ? 'relative ring-1 ring-cyan-500/30' : ''
+      className={`w-full max-w-md mx-auto bg-[#131b34]/95 backdrop-blur-xl border border-indigo-500/30 rounded-3xl p-5 shadow-2xl text-white font-sans select-none relative ${
+        isFloating ? 'ring-1 ring-cyan-500/30' : ''
       }`}
-      dir="rtl"
+      dir={lang === 'ar' ? 'rtl' : 'ltr'}
     >
-      {/* HEADER: L.H Badge + Title + Close Button */}
+      {/* Toast Notification: تم حفظ الإعدادات بنجاح */}
+      {saveToast && (
+        <div className="fixed -bottom-14 left-1/2 -translate-x-1/2 z-50 bg-emerald-950/95 border-2 border-emerald-400 text-emerald-200 px-6 py-2.5 rounded-full shadow-[0_0_30px_rgba(16,185,129,0.7)] flex items-center gap-2 text-xs font-bold animate-bounce">
+          <Check className="w-4 h-4 text-emerald-300" />
+          <span>{t.settingsSavedToast}</span>
+        </div>
+      )}
+
+      {/* HEADER: L.H Badge + Title + Language switcher + Logout + Close Button */}
       <div className="flex items-center justify-between pb-2">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5">
           {/* L.H Round Badge */}
           <div className="w-10 h-10 rounded-full bg-emerald-500 flex items-center justify-center font-bold text-slate-950 text-sm shadow-[0_0_15px_rgba(16,185,129,0.5)] border-2 border-emerald-300">
             L.H
           </div>
-          <div>
-            <h2 className="text-xl font-bold tracking-tight text-white flex items-center gap-1.5">
-              مساعد لوكيت
-            </h2>
-          </div>
+          <h2 className="text-xl font-bold tracking-tight text-white">
+            {t.helperTitle}
+          </h2>
         </div>
 
-        {onClose && (
-          <button
-            onClick={onClose}
-            className="w-8 h-8 rounded-full bg-slate-800/80 hover:bg-slate-700 border border-slate-700/80 flex items-center justify-center text-slate-300 hover:text-white transition-colors cursor-pointer"
-            title="إغلاق"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {/* Language Toggle in Modal */}
+          {onLanguageChange && (
+            <div className="flex bg-[#0e1528] rounded-xl p-0.5 border border-slate-700">
+              <button
+                type="button"
+                onClick={() => onLanguageChange('en')}
+                className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition-all ${
+                  lang === 'en' ? 'bg-emerald-500 text-slate-950' : 'text-slate-400'
+                }`}
+              >
+                En
+              </button>
+              <button
+                type="button"
+                onClick={() => onLanguageChange('ar')}
+                className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition-all ${
+                  lang === 'ar' ? 'bg-emerald-500 text-slate-950' : 'text-slate-400'
+                }`}
+              >
+                عربي
+              </button>
+            </div>
+          )}
+
+          {/* Logout in Modal */}
+          {onLogout && (
+            <button
+              onClick={onLogout}
+              className="px-2.5 py-1 rounded-xl bg-rose-950/40 border border-rose-500/40 text-rose-300 text-[10px] font-bold hover:bg-rose-900/60"
+            >
+              {t.logout}
+            </button>
+          )}
+
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="w-8 h-8 rounded-full bg-slate-800/80 hover:bg-slate-700 border border-slate-700/80 flex items-center justify-center text-slate-300 hover:text-white transition-colors cursor-pointer"
+              title="إغلاق"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* STATUS SUB-HEADER */}
-      <div className="text-center py-1 mb-3">
+      <div className="text-center py-1 mb-2.5">
         <p
           className={`text-sm font-semibold tracking-wide transition-colors ${
             isAutoAcceptActive
@@ -86,22 +152,22 @@ export const LocateAssistantModal: React.FC<LocateAssistantModalProps> = ({
               : 'text-amber-400/90'
           }`}
         >
-          {isAutoAcceptActive ? 'القبول التلقائي يعمل' : 'القبول التلقائي متوقف'}
+          {isAutoAcceptActive ? t.autoAcceptActive : t.autoAcceptStopped}
         </p>
       </div>
 
       {/* SECTION 1: القبول التلقائي (Card with Toggle Switch) */}
-      <div className="bg-[#1b2548]/85 hover:bg-[#1f2b54] transition-all rounded-2xl p-4 mb-3.5 border border-indigo-500/20 shadow-sm flex items-center justify-between">
+      <div className="bg-[#1b2548]/85 hover:bg-[#1f2b54] transition-all rounded-2xl p-4 mb-3 border border-indigo-500/20 shadow-sm flex items-center justify-between">
         <div className="text-right">
-          <h3 className="text-base font-bold text-white mb-0.5">القبول التلقائي</h3>
-          <p className="text-xs text-slate-300/80">تشغيل أو تعطيل قبول الطلبات</p>
+          <h3 className="text-sm font-bold text-white mb-0.5">{t.autoAcceptToggleTitle}</h3>
+          <p className="text-[11px] text-slate-300/80">{t.autoAcceptToggleDesc}</p>
         </div>
 
         {/* Toggle Switch */}
         <button
           onClick={onTogglePower}
           type="button"
-          className={`relative inline-flex h-8 w-15 shrink-0 cursor-pointer rounded-full p-1 transition-colors duration-300 ease-in-out focus:outline-none ${
+          className={`relative inline-flex h-7 w-13 shrink-0 cursor-pointer rounded-full p-0.5 transition-colors duration-300 ease-in-out focus:outline-none ${
             settings.autoAccept && status.isRunning
               ? 'bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.5)]'
               : 'bg-slate-700'
@@ -111,118 +177,121 @@ export const LocateAssistantModal: React.FC<LocateAssistantModalProps> = ({
         >
           <span
             className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-md ring-0 transition duration-300 ease-in-out ${
-              settings.autoAccept && status.isRunning ? 'translate-x-0' : '-translate-x-7'
+              settings.autoAccept && status.isRunning ? 'translate-x-0' : '-translate-x-6'
             }`}
           />
         </button>
       </div>
 
       {/* SECTION 2: مسافة المطعم (Restaurant Distance Stepper Card) */}
-      <div className="bg-[#1b2548]/85 rounded-2xl p-4 mb-3.5 border border-indigo-500/20 shadow-sm text-center">
-        <div className="flex items-center justify-center gap-1.5 mb-2.5 text-slate-200">
+      <div className="bg-[#1b2548]/85 rounded-2xl p-3.5 mb-3 border border-indigo-500/20 shadow-sm text-center">
+        <div className="flex items-center justify-center gap-1.5 mb-2 text-slate-200">
           <span className="text-red-400 text-sm">📍</span>
-          <h3 className="text-base font-bold">مسافة المطعم</h3>
+          <h3 className="text-sm font-bold">{t.restaurantDistanceTitle}</h3>
         </div>
 
-        {/* Stepper Buttons Row: [ 1+ ] [ + ] [ 1.0 كم ] [ - ] [ -1 ] */}
-        <div className="flex items-center justify-center gap-2 mb-2 dir-ltr">
+        {/* Stepper Buttons Row: [ 1+ ] [ + ] [ 1.5 كم ] [ - ] [ -1 ] */}
+        <div className="flex items-center justify-center gap-2 mb-1.5 dir-ltr">
           <button
             onClick={() => handleAdjustPickup(-1.0)}
-            className="w-11 h-10 rounded-xl bg-[#23315e] hover:bg-[#2b3c74] active:scale-95 border border-indigo-400/30 font-bold text-sm text-slate-100 flex items-center justify-center transition-all cursor-pointer shadow-sm"
+            className="w-10 h-9 rounded-xl bg-[#23315e] hover:bg-[#2b3c74] active:scale-95 border border-indigo-400/30 font-bold text-xs text-slate-100 flex items-center justify-center transition-all cursor-pointer shadow-sm"
             title="تقليل 1 كم"
           >
             -1
           </button>
           <button
             onClick={() => handleAdjustPickup(-0.5)}
-            className="w-11 h-10 rounded-xl bg-[#23315e] hover:bg-[#2b3c74] active:scale-95 border border-indigo-400/30 font-bold text-base text-slate-100 flex items-center justify-center transition-all cursor-pointer shadow-sm"
+            className="w-10 h-9 rounded-xl bg-[#23315e] hover:bg-[#2b3c74] active:scale-95 border border-indigo-400/30 font-bold text-sm text-slate-100 flex items-center justify-center transition-all cursor-pointer shadow-sm"
             title="تقليل 0.5 كم"
           >
             -
           </button>
 
           {/* Central Value Display Pill */}
-          <div className="min-w-[100px] h-10 px-3 rounded-xl bg-[#0e152a] border border-cyan-500/40 flex items-center justify-center shadow-inner font-mono font-extrabold text-base text-white tracking-wider">
-            {currentPickupKm.toFixed(1)} كم
+          <div className="min-w-[95px] h-9 px-2.5 rounded-xl bg-[#0e152a] border border-cyan-500/40 flex items-center justify-center shadow-inner font-mono font-extrabold text-sm text-white tracking-wider">
+            {currentPickupKm.toFixed(1)} {t.kmUnit}
           </div>
 
           <button
             onClick={() => handleAdjustPickup(0.5)}
-            className="w-11 h-10 rounded-xl bg-[#23315e] hover:bg-[#2b3c74] active:scale-95 border border-indigo-400/30 font-bold text-base text-slate-100 flex items-center justify-center transition-all cursor-pointer shadow-sm"
+            className="w-10 h-9 rounded-xl bg-[#23315e] hover:bg-[#2b3c74] active:scale-95 border border-indigo-400/30 font-bold text-sm text-slate-100 flex items-center justify-center transition-all cursor-pointer shadow-sm"
             title="زيادة 0.5 كم"
           >
             +
           </button>
           <button
             onClick={() => handleAdjustPickup(1.0)}
-            className="w-11 h-10 rounded-xl bg-[#23315e] hover:bg-[#2b3c74] active:scale-95 border border-indigo-400/30 font-bold text-sm text-slate-100 flex items-center justify-center transition-all cursor-pointer shadow-sm"
+            className="w-10 h-9 rounded-xl bg-[#23315e] hover:bg-[#2b3c74] active:scale-95 border border-indigo-400/30 font-bold text-xs text-slate-100 flex items-center justify-center transition-all cursor-pointer shadow-sm"
             title="زيادة 1 كم"
           >
             1+
           </button>
         </div>
 
-        <p className="text-xs text-slate-300/80">تعديل المسافة المسموحة بينك وبين المطعم</p>
+        <p className="text-[11px] text-slate-300/80">{t.restaurantDistanceDesc}</p>
       </div>
 
       {/* SECTION 3: مسافة العميل (Customer Distance Stepper Card) */}
-      <div className="bg-[#1b2548]/85 rounded-2xl p-4 mb-3.5 border border-indigo-500/20 shadow-sm text-center">
-        <div className="flex items-center justify-center gap-1.5 mb-2.5 text-slate-200">
+      <div className="bg-[#1b2548]/85 rounded-2xl p-3.5 mb-3 border border-indigo-500/20 shadow-sm text-center">
+        <div className="flex items-center justify-center gap-1.5 mb-2 text-slate-200">
           <span className="text-red-400 text-sm">📍</span>
-          <h3 className="text-base font-bold">مسافة العميل</h3>
+          <h3 className="text-sm font-bold">{t.customerDistanceTitle}</h3>
         </div>
 
-        {/* Stepper Buttons Row: [ 1+ ] [ + ] [ 2.5 كم ] [ - ] [ -1 ] */}
-        <div className="flex items-center justify-center gap-2 mb-2 dir-ltr">
+        {/* Stepper Buttons Row: [ 1+ ] [ + ] [ 3.0 كم ] [ - ] [ -1 ] */}
+        <div className="flex items-center justify-center gap-2 mb-1.5 dir-ltr">
           <button
             onClick={() => handleAdjustDelivery(-1.0)}
-            className="w-11 h-10 rounded-xl bg-[#23315e] hover:bg-[#2b3c74] active:scale-95 border border-indigo-400/30 font-bold text-sm text-slate-100 flex items-center justify-center transition-all cursor-pointer shadow-sm"
+            className="w-10 h-9 rounded-xl bg-[#23315e] hover:bg-[#2b3c74] active:scale-95 border border-indigo-400/30 font-bold text-xs text-slate-100 flex items-center justify-center transition-all cursor-pointer shadow-sm"
             title="تقليل 1 كم"
           >
             -1
           </button>
           <button
             onClick={() => handleAdjustDelivery(-0.5)}
-            className="w-11 h-10 rounded-xl bg-[#23315e] hover:bg-[#2b3c74] active:scale-95 border border-indigo-400/30 font-bold text-base text-slate-100 flex items-center justify-center transition-all cursor-pointer shadow-sm"
+            className="w-10 h-9 rounded-xl bg-[#23315e] hover:bg-[#2b3c74] active:scale-95 border border-indigo-400/30 font-bold text-sm text-slate-100 flex items-center justify-center transition-all cursor-pointer shadow-sm"
             title="تقليل 0.5 كم"
           >
             -
           </button>
 
           {/* Central Value Display Pill */}
-          <div className="min-w-[100px] h-10 px-3 rounded-xl bg-[#0e152a] border border-cyan-500/40 flex items-center justify-center shadow-inner font-mono font-extrabold text-base text-white tracking-wider">
-            {currentDeliveryKm.toFixed(1)} كم
+          <div className="min-w-[95px] h-9 px-2.5 rounded-xl bg-[#0e152a] border border-cyan-500/40 flex items-center justify-center shadow-inner font-mono font-extrabold text-sm text-white tracking-wider">
+            {currentDeliveryKm.toFixed(1)} {t.kmUnit}
           </div>
 
           <button
             onClick={() => handleAdjustDelivery(0.5)}
-            className="w-11 h-10 rounded-xl bg-[#23315e] hover:bg-[#2b3c74] active:scale-95 border border-indigo-400/30 font-bold text-base text-slate-100 flex items-center justify-center transition-all cursor-pointer shadow-sm"
+            className="w-10 h-9 rounded-xl bg-[#23315e] hover:bg-[#2b3c74] active:scale-95 border border-indigo-400/30 font-bold text-sm text-slate-100 flex items-center justify-center transition-all cursor-pointer shadow-sm"
             title="زيادة 0.5 كم"
           >
             +
           </button>
           <button
             onClick={() => handleAdjustDelivery(1.0)}
-            className="w-11 h-10 rounded-xl bg-[#23315e] hover:bg-[#2b3c74] active:scale-95 border border-indigo-400/30 font-bold text-sm text-slate-100 flex items-center justify-center transition-all cursor-pointer shadow-sm"
+            className="w-10 h-9 rounded-xl bg-[#23315e] hover:bg-[#2b3c74] active:scale-95 border border-indigo-400/30 font-bold text-xs text-slate-100 flex items-center justify-center transition-all cursor-pointer shadow-sm"
             title="زيادة 1 كم"
           >
             1+
           </button>
         </div>
 
-        <p className="text-xs text-slate-300/80">تعديل المسافة المسموحة بين المطعم والعميل</p>
+        <p className="text-[11px] text-slate-300/80">{t.customerDistanceDesc}</p>
       </div>
 
-      {/* SECTION 4: سرعة السحب (Swipe Speed Slider Card) */}
-      <div className="bg-[#1b2548]/85 rounded-2xl p-4 mb-3.5 border border-indigo-500/20 shadow-sm text-center">
-        <h3 className="text-base font-bold text-slate-200 mb-1">سرعة السحب</h3>
+      {/* SECTION 4: السحب السريع (Swipe Speed Slider Card) */}
+      <div className="bg-[#1b2548]/85 rounded-2xl p-3.5 mb-3 border border-indigo-500/20 shadow-sm text-center">
+        <h3 className="text-sm font-bold text-slate-200 mb-1 flex items-center justify-center gap-1.5">
+          <span>⚡</span>
+          <span>{t.fastSwipeTitle}</span>
+        </h3>
 
-        <div className="text-xl font-extrabold font-mono text-cyan-400 my-1 drop-shadow-[0_0_8px_rgba(6,182,212,0.5)]">
-          {currentSwipeSpeed} ms
+        <div className="text-lg font-extrabold font-mono text-cyan-400 my-0.5 drop-shadow-[0_0_8px_rgba(6,182,212,0.5)]">
+          {currentSwipeSpeed} {t.fastSwipeUnit}
         </div>
 
         {/* Range Slider */}
-        <div className="px-2 my-2 dir-ltr">
+        <div className="px-2 my-1.5 dir-ltr">
           <input
             type="range"
             min={100}
@@ -230,12 +299,12 @@ export const LocateAssistantModal: React.FC<LocateAssistantModalProps> = ({
             step={50}
             value={currentSwipeSpeed}
             onChange={(e) => handleSwipeSpeedChange(Number(e.target.value))}
-            className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-cyan-400"
+            className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-cyan-400"
           />
         </div>
 
         {/* Preset Buttons for Quick Selection */}
-        <div className="grid grid-cols-4 gap-1.5 my-2">
+        <div className="grid grid-cols-4 gap-1.5 my-1.5">
           {[100, 150, 200, 250].map((preset) => (
             <button
               key={preset}
@@ -251,31 +320,65 @@ export const LocateAssistantModal: React.FC<LocateAssistantModalProps> = ({
           ))}
         </div>
 
-        <p className="text-[11px] text-slate-300/80 font-medium">
-          100 | 150 | 200 | 250 – الأقل أسرع، والأعلى أنسب للجوالات الضعيفة
+        <p className="text-[10px] text-slate-400 font-medium">
+          {t.fastSwipeFaster} ... {t.fastSwipeSlower} — {t.fastSwipeDesc}
         </p>
       </div>
 
-      {/* SECTION 5: فاصل النقرات المتتالية (Repeated-tap Interval Card) */}
-      <div className="bg-[#1b2548]/85 rounded-2xl p-4 border border-indigo-500/20 shadow-sm">
-        <div className="text-center mb-2">
-          <h3 className="text-sm font-bold text-slate-200">
-            فاصل النقرات المتتالية | Repeated-tap Interval
+      {/* SECTION 5: لغة بطاقة الطلب (Order Card Language) */}
+      <div className="bg-[#1b2548]/85 rounded-2xl p-3.5 mb-3 border border-indigo-500/20 shadow-sm">
+        <div className="flex items-center justify-between mb-2">
+          <div className="text-right">
+            <h3 className="text-xs font-bold text-slate-200">{t.orderCardLangTitle}</h3>
+            <p className="text-[10px] text-slate-400">{t.orderCardLangDesc}</p>
+          </div>
+          <div className="flex items-center gap-1.5 bg-[#0e152a] p-1 rounded-xl border border-indigo-500/30">
+            <button
+              type="button"
+              onClick={() => handleCardLangChange('en')}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                currentCardLang === 'en'
+                  ? 'bg-emerald-500 text-slate-950 shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              English
+            </button>
+            <button
+              type="button"
+              onClick={() => handleCardLangChange('ar')}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                currentCardLang === 'ar'
+                  ? 'bg-emerald-500 text-slate-950 shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              العربية
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* SECTION 6: فاصل النقرات المتتالية (Repeated-tap Interval Card) */}
+      <div className="bg-[#1b2548]/85 rounded-2xl p-3.5 mb-4 border border-indigo-500/20 shadow-sm">
+        <div className="text-center mb-1.5">
+          <h3 className="text-xs font-bold text-slate-200">
+            {t.repeatedTapTitle}
           </h3>
         </div>
 
         {/* Enable custom interval toggle row */}
-        <div className="flex items-center justify-between my-2 text-xs text-slate-300">
-          <span>تفعيل القيمة المخصصة | Enable custom interval</span>
+        <div className="flex items-center justify-between my-1.5 text-xs text-slate-300">
+          <span className="text-[11px]">{t.enableCustomValue}</span>
           <button
             onClick={() => onUpdateSettings({ enableCustomInterval: !isCustomIntervalEnabled })}
             type="button"
-            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full p-0.5 transition-colors duration-200 ease-in-out focus:outline-none ${
+            className={`relative inline-flex h-5 w-10 shrink-0 cursor-pointer rounded-full p-0.5 transition-colors duration-200 ease-in-out focus:outline-none ${
               isCustomIntervalEnabled ? 'bg-cyan-500' : 'bg-slate-700'
             }`}
           >
             <span
-              className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+              className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
                 isCustomIntervalEnabled ? 'translate-x-0' : '-translate-x-5'
               }`}
             />
@@ -283,7 +386,7 @@ export const LocateAssistantModal: React.FC<LocateAssistantModalProps> = ({
         </div>
 
         {/* Numeric input box */}
-        <div className="flex items-center justify-center gap-2 mt-2 dir-ltr">
+        <div className="flex items-center justify-center gap-2 mt-1.5 dir-ltr">
           <input
             type="number"
             min={5}
@@ -291,15 +394,32 @@ export const LocateAssistantModal: React.FC<LocateAssistantModalProps> = ({
             disabled={!isCustomIntervalEnabled}
             value={currentTapInterval}
             onChange={(e) => handleTapIntervalChange(Number(e.target.value))}
-            className={`w-24 h-9 px-2 text-center rounded-xl font-mono font-bold text-sm border transition-all ${
+            className={`w-20 h-8 px-2 text-center rounded-xl font-mono font-bold text-xs border transition-all ${
               isCustomIntervalEnabled
                 ? 'bg-[#0e152a] text-cyan-300 border-cyan-500/50 shadow-inner'
                 : 'bg-slate-800/60 text-slate-500 border-slate-700/50 cursor-not-allowed'
             }`}
           />
-          <span className="text-xs text-slate-400 font-mono">ms (5-1000)</span>
+          <span className="text-[11px] text-slate-400 font-mono">{t.msUnit}</span>
         </div>
+        <p className="text-[10px] text-slate-400 text-center mt-1">
+          {t.repeatedTapDesc}
+        </p>
       </div>
+
+      {/* BIG GREEN BUTTON: حفظ الإعدادات (Save Settings) */}
+      <button
+        onClick={handleSaveSettings}
+        className="w-full py-3.5 px-4 rounded-2xl bg-emerald-500 hover:bg-emerald-400 active:scale-98 text-slate-950 font-black text-sm tracking-wide shadow-[0_0_20px_rgba(16,185,129,0.5)] transition-all cursor-pointer flex items-center justify-center gap-2"
+      >
+        <Check className="w-4 h-4 stroke-[3]" />
+        <span>{t.saveSettings}</span>
+      </button>
+
+      {/* FOOTER SHORTCUT HINT */}
+      <p className="text-[10px] text-slate-400 text-center mt-2.5 font-medium leading-relaxed">
+        {t.volumeDownHint}
+      </p>
     </div>
   );
 };

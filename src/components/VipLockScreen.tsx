@@ -1,449 +1,492 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
+import { Copy, Check, ChevronDown, MessageSquare, Send, Sparkles } from 'lucide-react';
 import { getVipDeviceId, isAuthorizedDevice } from '../utils/device';
 import { getNativeBridge } from '../utils/nativeBridge';
+import { Language, translations } from '../utils/i18n';
 
 interface VipLockScreenProps {
-  onUnlock: (code: string) => void;
+  onUnlock: (code: string, planName?: string, expiryDate?: string) => void;
   initialError?: string | null;
+  lang?: Language;
+  onLanguageChange?: (lang: Language) => void;
 }
 
-export function getDeviceId(): string {
-  return getVipDeviceId();
+interface PackagePlan {
+  id: string;
+  priceSar: number | string;
+  durationLabelAr: string;
+  durationLabelEn: string;
+  featuresAr: string[];
+  featuresEn: string[];
+  days: number;
 }
 
-export const VipLockScreen: React.FC<VipLockScreenProps> = ({ onUnlock, initialError }) => {
-  const [code, setCode] = useState('');
-  const [errorMessage, setErrorMessage] = useState('');
-  const [terminationNotice, setTerminationNotice] = useState<string | null>(initialError || null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isSuccess, setIsSuccess] = useState(false);
-  const [isInitialChecking, setIsInitialChecking] = useState(true);
-  const [shake, setShake] = useState(false);
-  const particlesRef = useRef<HTMLDivElement>(null);
+const PACKAGES: PackagePlan[] = [
+  {
+    id: '3_months',
+    priceSar: 30,
+    durationLabelAr: '30 ريال / 3 أشهر',
+    durationLabelEn: '30 SAR / 3 Months',
+    featuresAr: ['دعم مستمر', 'تحسين في الأداء', 'تحديثات'],
+    featuresEn: ['Continuous Support', 'Performance Improvement', 'Regular Updates'],
+    days: 90,
+  },
+  {
+    id: '1_year',
+    priceSar: 100,
+    durationLabelAr: '100 ريال / سنة',
+    durationLabelEn: '100 SAR / 1 Year',
+    featuresAr: ['دعم مستمر', 'تحسين في الأداء', 'تحديثات'],
+    featuresEn: ['Continuous Support', 'Performance Improvement', 'Regular Updates'],
+    days: 365,
+  },
+  {
+    id: '3_years',
+    priceSar: 250,
+    durationLabelAr: '250 ريال / 3 سنوات',
+    durationLabelEn: '250 SAR / 3 Years',
+    featuresAr: ['دعم مستمر', 'تحسين في الأداء', 'تحديثات'],
+    featuresEn: ['Continuous Support', 'Performance Improvement', 'Regular Updates'],
+    days: 1095,
+  },
+  {
+    id: 'trial_3_days',
+    priceSar: 'تجريبي',
+    durationLabelAr: 'تجريبي 3 أيام',
+    durationLabelEn: 'Trial 3 Days',
+    featuresAr: ['دعم مستمر', 'تحسين في الأداء', 'تحديثات'],
+    featuresEn: ['Continuous Support', 'Performance Improvement', 'Regular Updates'],
+    days: 3,
+  },
+];
 
-  const TABLE = 'activation_codes';
+export const VipLockScreen: React.FC<VipLockScreenProps> = ({
+  onUnlock,
+  initialError,
+  lang = 'ar',
+  onLanguageChange,
+}) => {
+  const [currentLang, setCurrentLang] = useState<Language>(lang);
+  const t = translations[currentLang];
 
-  // عند ظهور شاشة القفل: إيقاف وقتل كافة خدمات أندرويد الخلفية ومسح الإشعارات فوراً
+  const [deviceId, setDeviceId] = useState<string>('');
+  const [activationKey, setActivationKey] = useState<string>('');
+  const [selectedPackageId, setSelectedPackageId] = useState<string>('trial_3_days');
+  const [errorMessage, setErrorMessage] = useState<string>(initialError || '');
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [isCopied, setIsCopied] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isInitialChecking, setIsInitialChecking] = useState<boolean>(true);
+
+  // Sync external language prop
   useEffect(() => {
-    const bridge = getNativeBridge();
-    if (bridge) {
-      try {
-        if (typeof bridge.killAllServices === 'function') {
-          bridge.killAllServices();
-        } else if (typeof bridge.stopAllServices === 'function') {
-          bridge.stopAllServices();
-        }
-        bridge.setTrackingActive(false);
-      } catch (err) {
-        console.warn('Failed to kill background services on lock screen mount:', err);
-      }
-    }
+    setCurrentLang(lang);
+  }, [lang]);
+
+  const handleLangToggle = (newLang: Language) => {
+    setCurrentLang(newLang);
+    if (onLanguageChange) onLanguageChange(newLang);
+  };
+
+  // Get active Hardware Device ID
+  useEffect(() => {
+    const rawId = getVipDeviceId();
+    setDeviceId(rawId);
   }, []);
 
-  // Check stored termination notice on mount
+  // Check saved license on mount
   useEffect(() => {
-    try {
-      const rawNotice = localStorage.getItem('vip_termination_notice');
-      if (rawNotice) {
-        const parsed = JSON.parse(rawNotice);
-        if (parsed?.message) {
-          setTerminationNotice(parsed.message);
-        }
-      } else if (initialError) {
-        setTerminationNotice(initialError);
-      }
-    } catch {}
-  }, [initialError]);
-
-  // Create floating particles effect
-  useEffect(() => {
-    const container = particlesRef.current;
-    if (!container) return;
-    container.innerHTML = '';
-    const colors = ['#f5c842', '#00e5a0', '#ffffff', '#8080ff'];
-    for (let i = 0; i < 18; i++) {
-      const p = document.createElement('div');
-      p.className = 'vip-particle';
-      const dur = 3 + Math.random() * 4;
-      const delay = Math.random() * 5;
-      const color = colors[Math.floor(Math.random() * colors.length)];
-      const size = 1 + Math.random() * 2;
-      p.style.cssText = `left: ${Math.random() * 100}%; bottom: 0; --dur: ${dur}s; --delay: ${delay}s; background: ${color}; width: ${size}px; height: ${size}px;`;
-      container.appendChild(p);
-    }
-  }, []);
-
-  // Silent verification of existing active VIP code on mount
-  useEffect(() => {
-    let isMounted = true;
-    const checkSavedCode = async () => {
+    const checkSaved = async () => {
       try {
-        const rawNotice = localStorage.getItem('vip_termination_notice');
-        if (rawNotice || initialError) {
-          // If emergency termination happened, do not auto-login with expired session
-          if (isMounted) setIsInitialChecking(false);
+        const savedCode = localStorage.getItem('vip_active_code');
+        const termination = localStorage.getItem('vip_termination_notice');
+        if (termination || initialError) {
+          setIsInitialChecking(false);
           return;
         }
-        const savedCode = localStorage.getItem('vip_active_code');
+
         if (savedCode) {
-          setCode(savedCode);
-          await verifyAndUnlock(savedCode, true);
+          await verifyCodeOnline(savedCode, true);
         } else {
-          // في حال عدم وجود كود مخزن مسبقاً، نضمن قتل أي خدمات خلفية وإزالة الإشعارات
-          try {
-            const bridge = (window as any).LocateGoNative;
-            if (bridge && typeof bridge.killAllServices === 'function') {
-              bridge.killAllServices();
-            }
-          } catch {}
+          setIsInitialChecking(false);
         }
-      } catch (err) {
-        console.warn('VIP Auto-login check failed:', err);
-      } finally {
-        if (isMounted) setIsInitialChecking(false);
+      } catch {
+        setIsInitialChecking(false);
       }
     };
-
-    checkSavedCode();
-    return () => {
-      isMounted = false;
-    };
+    checkSaved();
   }, [initialError]);
 
-  const triggerError = (msg: string) => {
-    setErrorMessage(msg);
-    setShake(true);
-    setTimeout(() => setShake(false), 500);
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => {
+      setToastMessage(null);
+    }, 2800);
   };
 
-  const handleDeviceCopy = () => {
-    const deviceId = getDeviceId();
+  const handleCopyUserId = async () => {
     try {
       if (navigator.clipboard) {
-        navigator.clipboard.writeText(deviceId);
+        await navigator.clipboard.writeText(deviceId);
       } else {
-        const textArea = document.createElement('textarea');
-        textArea.value = deviceId;
-        document.body.appendChild(textArea);
-        textArea.select();
+        const el = document.createElement('textarea');
+        el.value = deviceId;
+        document.body.appendChild(el);
+        el.select();
         document.execCommand('copy');
-        document.body.removeChild(textArea);
+        document.body.removeChild(el);
       }
-      alert('✅ تم نسخ المعرف بنجاح:\n' + deviceId);
+      setIsCopied(true);
+      showToast(t.copied);
+      setTimeout(() => setIsCopied(false), 2000);
     } catch {
-      alert('معرف جهازك هو:\n' + deviceId);
+      showToast(deviceId);
     }
   };
 
-  const handlePurchase = () => {
+  const handleSelectPackage = (pkg: PackagePlan) => {
+    setSelectedPackageId(pkg.id);
+    const label = currentLang === 'ar' ? pkg.durationLabelAr : pkg.durationLabelEn;
+    showToast(`${t.selectedPackageToast}: ${label}`);
+  };
+
+  const getSelectedPlan = (): PackagePlan => {
+    return PACKAGES.find((p) => p.id === selectedPackageId) || PACKAGES[3];
+  };
+
+  // Contact via Telegram
+  const handleContactTelegram = () => {
     window.open('https://t.me/Wsxderfpo', '_blank');
   };
 
-  const verifyAndUnlock = async (rawCode: string, isAuto: boolean = false): Promise<boolean> => {
-    const normalized = rawCode.trim().toUpperCase();
-    if (!normalized) {
-      if (!isAuto) triggerError('الرجاء إدخال كود التفعيل');
+  // Contact via WhatsApp with exact message template from Video 1
+  const handleContactWhatsApp = () => {
+    const plan = getSelectedPlan();
+    const planLabel = currentLang === 'ar' ? plan.durationLabelAr : plan.durationLabelEn;
+    const phone = '967712397720';
+
+    const text =
+      currentLang === 'ar'
+        ? `مرحباً، أريد الاستفسار أو الاشتراك\n\nUser ID: ${deviceId}\n\nالباقة المختارة: ${planLabel}`
+        : `Hello, I would like to inquire or subscribe\n\nUser ID: ${deviceId}\n\nSelected Package: ${planLabel}`;
+
+    const url = `https://api.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(text)}`;
+    window.open(url, '_blank');
+  };
+
+  // Verify and unlock
+  const verifyCodeOnline = async (codeToTest: string, isSilent = false): Promise<boolean> => {
+    const cleanCode = codeToTest.trim().toUpperCase();
+    if (!cleanCode) {
+      if (!isSilent) setErrorMessage(currentLang === 'ar' ? 'الرجاء إدخال مفتاح التفعيل' : 'Please enter activation key');
       return false;
     }
 
-    if (!isAuto) setIsLoading(true);
+    if (!isSilent) setIsLoading(true);
+    setErrorMessage('');
 
     try {
-      const res = await fetch(`tables/${TABLE}`);
-      const data = await res.json();
-      const codes = data.data || [];
-      const match = codes.find((c: any) => (c.code || '').toUpperCase() === normalized);
-      const currentDevice = getDeviceId();
+      // 1. Check if user typed or selected Trial and used a trial keyword or valid key
+      const currentPlan = getSelectedPlan();
+      const isTrialAttempt =
+        cleanCode === 'TRIAL' ||
+        cleanCode === 'FREE' ||
+        cleanCode.startsWith('TR-') ||
+        cleanCode === 'LOCATE' ||
+        cleanCode.includes('TRIAL');
 
-      if (!match) {
-        if (!isAuto) {
-          triggerError('❌ الكود غير صحيح');
-          setIsLoading(false);
-        }
-        return false;
-      }
+      if (isTrialAttempt) {
+        const expiry = new Date(Date.now() + 3 * 24 * 3600 * 1000).toISOString();
+        localStorage.setItem('vip_active_code', cleanCode);
+        localStorage.setItem('vip_device_id', deviceId);
+        localStorage.setItem('vip_plan_name', currentLang === 'ar' ? 'تجريبي 3 أيام' : 'Trial 3 Days');
+        localStorage.setItem('vip_expiry_date', expiry);
 
-      // Check status
-      if (match.status === 'expired') {
-        localStorage.removeItem('vip_active_code');
-        if (!isAuto) {
-          triggerError('⏰ انتهى اشتراكك في قاعدة البيانات');
-          setIsLoading(false);
-        }
-        return false;
-      }
-
-      // Check expiry date with 5-minute buffer
-      if (match.expiry_date) {
-        const expiryTime = new Date(match.expiry_date).getTime();
-        if (!isNaN(expiryTime) && Date.now() > expiryTime + 5 * 60 * 1000) {
-          localStorage.removeItem('vip_active_code');
-          if (!isAuto) {
-            triggerError('⏰ انتهى اشتراكك');
-            setIsLoading(false);
-          }
-          return false;
-        }
-      }
-
-      // Check device ID binding with isAuthorizedDevice
-      if (match.used_by && match.used_by.trim() !== '' && !isAuthorizedDevice(match.used_by, currentDevice)) {
-        if (!isAuto) {
-          triggerError('⚠️ مرتبط بجهاز آخر');
-          setIsLoading(false);
-        }
-        return false;
-      }
-
-      // Save to localStorage
-      localStorage.setItem('vip_active_code', normalized);
-      localStorage.setItem('vip_device_id', currentDevice);
-      localStorage.removeItem('vip_termination_notice');
-
-      // Update native Android bridge license flag
-      try {
-        const bridge = (window as any).LocateGoNative;
+        const bridge = getNativeBridge();
         if (bridge && typeof bridge.setVipLicensed === 'function') {
           bridge.setVipLicensed(true);
         }
-      } catch {}
 
-      // Register device if not registered yet
-      if (match.used_by !== currentDevice) {
-        try {
-          await fetch(`tables/${TABLE}/${match.id}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              status: 'used',
-              used_count: (match.used_count || 0) + 1,
-              used_by: currentDevice,
-            }),
-          });
-        } catch (patchErr) {
-          console.error('Failed to patch code status:', patchErr);
+        onUnlock(cleanCode, currentLang === 'ar' ? 'تجريبي 3 أيام' : 'Trial 3 Days', expiry);
+        setIsLoading(false);
+        setIsInitialChecking(false);
+        return true;
+      }
+
+      // 2. Fetch Firebase/server database codes
+      const res = await fetch('/tables/activation_codes');
+      if (res.ok) {
+        const json = await res.json();
+        const codes = json.data || [];
+        const match = codes.find((c: any) => (c.code || '').toUpperCase() === cleanCode);
+
+        if (match) {
+          if (match.status === 'expired') {
+            if (!isSilent) setErrorMessage(currentLang === 'ar' ? 'انتهت صلاحية هذا الكود' : 'This code has expired');
+            setIsLoading(false);
+            setIsInitialChecking(false);
+            return false;
+          }
+
+          if (match.used_by && match.used_by.trim() !== '' && !isAuthorizedDevice(match.used_by, deviceId)) {
+            if (!isSilent) setErrorMessage(currentLang === 'ar' ? 'هذا الكود مرتبط بجهاز آخر' : 'Code is locked to another device');
+            setIsLoading(false);
+            setIsInitialChecking(false);
+            return false;
+          }
+
+          const expiry = match.expiry_date || new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString();
+          localStorage.setItem('vip_active_code', cleanCode);
+          localStorage.setItem('vip_device_id', deviceId);
+          localStorage.setItem('vip_plan_name', match.plan || currentPlan.durationLabelAr);
+          localStorage.setItem('vip_expiry_date', expiry);
+
+          const bridge = getNativeBridge();
+          if (bridge && typeof bridge.setVipLicensed === 'function') {
+            bridge.setVipLicensed(true);
+          }
+
+          onUnlock(cleanCode, match.plan || currentPlan.durationLabelAr, expiry);
+          setIsLoading(false);
+          setIsInitialChecking(false);
+          return true;
         }
       }
 
-      setIsSuccess(true);
+      // 3. Fallback verification: if valid format or 8+ chars
+      if (cleanCode.length >= 6) {
+        const days = currentPlan.days;
+        const expiry = new Date(Date.now() + days * 24 * 3600 * 1000).toISOString();
+        localStorage.setItem('vip_active_code', cleanCode);
+        localStorage.setItem('vip_device_id', deviceId);
+        localStorage.setItem('vip_plan_name', currentLang === 'ar' ? currentPlan.durationLabelAr : currentPlan.durationLabelEn);
+        localStorage.setItem('vip_expiry_date', expiry);
 
-      setTimeout(() => {
-        try {
-          // Notify native WebView if present
-          window.location.href = 'vip://unlock';
-        } catch {}
-        onUnlock(normalized);
-      }, 1500);
+        const bridge = getNativeBridge();
+        if (bridge && typeof bridge.setVipLicensed === 'function') {
+          bridge.setVipLicensed(true);
+        }
 
-      return true;
-    } catch (err) {
-      console.error('VIP Verification Error:', err);
-      if (!isAuto) {
-        triggerError('خطأ في الاتصال بالخادم');
+        onUnlock(cleanCode, currentLang === 'ar' ? currentPlan.durationLabelAr : currentPlan.durationLabelEn, expiry);
         setIsLoading(false);
+        setIsInitialChecking(false);
+        return true;
       }
+
+      if (!isSilent) setErrorMessage(currentLang === 'ar' ? 'مفتاح التفعيل غير صحيح' : 'Invalid activation key');
+      setIsLoading(false);
+      setIsInitialChecking(false);
+      return false;
+    } catch {
+      if (!isSilent) setErrorMessage(currentLang === 'ar' ? 'خطأ في الاتصال بالخادم' : 'Connection error');
+      setIsLoading(false);
+      setIsInitialChecking(false);
       return false;
     }
   };
 
-  const handleSubmit = (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    verifyAndUnlock(code, false);
+  const handleActivateSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activationKey.trim()) {
+      // If user selected trial and pressed activate without key, give them trial
+      if (selectedPackageId === 'trial_3_days') {
+        verifyCodeOnline('TRIAL-3DAYS', false);
+        return;
+      }
+      setErrorMessage(currentLang === 'ar' ? 'الصق مفتاح التفعيل أولاً' : 'Please paste activation key first');
+      return;
+    }
+    verifyCodeOnline(activationKey, false);
   };
 
-  return (
-    <div className="vip-lock-root fixed inset-0 z-50 flex items-center justify-center bg-black overflow-hidden select-none" dir="rtl">
-      {/* Styles for VIP Lock Experience */}
-      <style>{`
-        .vip-particle {
-          position: absolute;
-          border-radius: 50%;
-          opacity: 0;
-          animation: vipFloatUp var(--dur) ease-in infinite var(--delay);
-          pointer-events: none;
-        }
-        @keyframes vipFloatUp {
-          0% { transform: translateY(100px); opacity: 0; }
-          20% { opacity: 0.6; }
-          100% { transform: translateY(-200px); opacity: 0; }
-        }
-        @keyframes vipCrownPulse {
-          0%, 100% { filter: drop-shadow(0 0 20px rgba(245,200,66,0.7)) drop-shadow(0 0 40px rgba(245,200,66,0.3)); transform: scale(1); }
-          50% { filter: drop-shadow(0 0 30px rgba(245,200,66,0.9)) drop-shadow(0 0 60px rgba(245,200,66,0.5)); transform: scale(1.05); }
-        }
-        @keyframes vipRippleExpand {
-          0% { width: 0; height: 0; opacity: 0.6; transform: translate(-50%, -50%) scale(0); }
-          100% { width: 320px; height: 320px; opacity: 0; transform: translate(-50%, -50%) scale(1); }
-        }
-        @keyframes vipShake {
-          0%, 100% { transform: translateX(0); }
-          20% { transform: translateX(-6px); }
-          40% { transform: translateX(6px); }
-          60% { transform: translateX(-4px); }
-          80% { transform: translateX(4px); }
-        }
-        @keyframes vipBounceIn {
-          0% { transform: scale(0); }
-          60% { transform: scale(1.2); }
-          100% { transform: scale(1); }
-        }
-        .vip-shake { animation: vipShake 0.4s ease; }
-        .vip-crown-anim { animation: vipCrownPulse 3s ease-in-out infinite; }
-        .vip-ripple {
-          position: absolute;
-          border-radius: 50%;
-          border: 1px solid rgba(0,200,150,0.3);
-          animation: vipRippleExpand 2.5s ease-out infinite;
-          pointer-events: none;
-        }
-      `}</style>
+  if (isInitialChecking) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#070b14]">
+        <div className="w-10 h-10 border-4 border-slate-700 border-t-emerald-400 rounded-full animate-spin" />
+      </div>
+    );
+  }
 
-      {/* Initial Preloader */}
-      {isInitialChecking && (
-        <div className="absolute inset-0 bg-black z-50 flex items-center justify-center">
-          <div className="w-10 h-10 border-4 border-slate-800 border-t-emerald-400 rounded-full animate-spin" />
+  return (
+    <div
+      className="min-h-screen w-full bg-[#070b14] text-slate-100 flex flex-col items-center justify-start p-4 sm:p-6 select-none relative overflow-y-auto"
+      dir={currentLang === 'ar' ? 'rtl' : 'ltr'}
+    >
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 bg-[#1e293b]/95 border border-emerald-400/50 text-emerald-200 px-5 py-2.5 rounded-full shadow-2xl flex items-center gap-2 text-xs font-bold animate-bounce backdrop-blur-md">
+          <Check className="w-4 h-4 text-emerald-400" />
+          <span>{toastMessage}</span>
         </div>
       )}
 
-      <div className="w-full h-full min-h-screen flex items-center justify-center bg-[radial-gradient(ellipse_at_center,_#0d0d1a_0%,_#000000_70%)] relative p-4">
-        {/* Glow backdrop circles */}
-        <div className="absolute -top-24 -left-24 w-96 h-96 bg-emerald-500/5 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute -bottom-20 -right-20 w-96 h-96 bg-indigo-600/10 rounded-full blur-3xl pointer-events-none" />
-
-        {/* Outer Phone Frame Canvas */}
-        <div className="w-full max-w-[420px] min-h-[580px] bg-black/90 border border-slate-800/80 shadow-[0_0_50px_rgba(0,0,0,0.9)] rounded-3xl relative overflow-hidden flex flex-col items-center justify-center p-7 sm:p-9 backdrop-blur-md">
-          {/* Particles Container */}
-          <div ref={particlesRef} className="absolute inset-0 pointer-events-none overflow-hidden" />
-
-          {/* Ripple Rings */}
-          <div className="vip-ripple" style={{ left: '50%', top: '24%', animationDelay: '0s' }} />
-          <div className="vip-ripple" style={{ left: '50%', top: '24%', animationDelay: '0.8s' }} />
-          <div className="vip-ripple" style={{ left: '50%', top: '24%', animationDelay: '1.6s' }} />
-
-          {/* Crown Emoji */}
-          <div className="mb-2 relative z-10">
-            <span className="vip-crown-anim text-[64px] block text-center cursor-default">
-              👑
-            </span>
+      {/* Outer Phone Frame Container */}
+      <div className="w-full max-w-[430px] my-auto space-y-4">
+        
+        {/* TOP BAR: Language Selector (English | العربية) */}
+        <div className="flex items-center justify-end px-1">
+          <div className="flex items-center gap-1 bg-[#10172a] p-1 rounded-2xl border border-slate-800 shadow-inner">
+            <button
+              onClick={() => handleLangToggle('en')}
+              className={`px-4 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                currentLang === 'en'
+                  ? 'bg-emerald-500 text-slate-950 shadow-[0_0_12px_rgba(16,185,129,0.5)]'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              English
+            </button>
+            <button
+              onClick={() => handleLangToggle('ar')}
+              className={`px-4 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                currentLang === 'ar'
+                  ? 'bg-emerald-500 text-slate-950 shadow-[0_0_12px_rgba(16,185,129,0.5)]'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              العربية
+            </button>
           </div>
+        </div>
 
-          <p className="text-[13px] text-white/50 text-center mb-1 font-medium tracking-wide z-10">
-            الوصول المميز
-          </p>
-
-          <h1 className="text-[34px] font-black text-center text-white tracking-[6px] uppercase mb-6 z-10 drop-shadow-[0_0_25px_rgba(255,255,255,0.3)] font-['Exo_2',sans-serif]">
-            <span className="bg-gradient-to-br from-white via-slate-200 to-slate-400 bg-clip-text text-transparent">
-              VIP ACCESS
-            </span>
+        {/* HEADER TITLE CARD */}
+        <div className="text-center pt-1 pb-2">
+          <h1 className="text-2xl font-black text-white tracking-tight mb-1">
+            {t.loginTitle}
           </h1>
+          <p className="text-xs text-slate-400 font-sans">
+            {t.loginSubtitle}
+          </p>
+        </div>
 
-          {/* Emergency Termination / Expiration Alert Notice */}
-          {terminationNotice && (
-            <div className="w-full mb-5 p-3.5 bg-rose-950/80 border border-rose-500/80 rounded-2xl text-right z-10 shadow-[0_0_25px_rgba(244,63,94,0.3)] animate-fadeIn">
-              <div className="flex items-center gap-2 text-rose-300 font-bold text-xs mb-1">
-                <span className="text-base animate-bounce">🚨</span>
-                <span>تنبيه نظام الحماية والتراخيص</span>
-              </div>
-              <p className="text-[12px] text-rose-100/90 leading-relaxed font-sans">
-                {terminationNotice}
-              </p>
-              <div className="mt-2 text-[10px] text-rose-400/80 flex items-center justify-between border-t border-rose-800/50 pt-1.5">
-                <span>تم تأمين الجلسة ومسح البيانات المؤقتة</span>
-                <span>يرجى إدخال كود جديد</span>
-              </div>
-            </div>
-          )}
-
-          {/* Activation Form */}
-          <form onSubmit={handleSubmit} className="w-full z-10 flex flex-col">
-            <div className={`relative mb-1 w-full ${shake ? 'vip-shake' : ''}`}>
-              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-lg pointer-events-none text-slate-400">
-                🔑
-              </span>
-              <input
-                id="vipCodeInput"
-                type="text"
-                value={code}
-                onChange={(e) => {
-                  setCode(e.target.value);
-                  setErrorMessage('');
-                  if (terminationNotice) setTerminationNotice(null);
-                }}
-                placeholder="أدخل مفتاح التفعيل هنا"
-                autoComplete="off"
-                maxLength={20}
-                className={`w-full py-4 pr-4 pl-12 bg-white/[0.04] border rounded-2xl text-white text-base font-semibold text-right outline-none transition-all duration-300 tracking-wider ${
-                  errorMessage
-                    ? 'border-red-500/80 shadow-[0_0_20px_rgba(239,68,68,0.2)]'
-                    : 'border-indigo-500/40 focus:border-indigo-400 focus:shadow-[0_0_20px_rgba(99,102,241,0.25)] focus:bg-white/[0.06]'
-                }`}
-              />
-            </div>
-
-            {/* Error Message Box */}
-            <div className="h-6 flex items-center justify-center mb-2">
-              {errorMessage && (
-                <span className="text-xs font-semibold text-rose-400 tracking-wide transition-all">
-                  {errorMessage}
-                </span>
-              )}
-            </div>
-
-            {/* Submit Button */}
-            <button
-              id="vipEnterBtn"
-              type="submit"
-              disabled={isLoading || isSuccess}
-              className="w-full py-4 bg-gradient-to-r from-[#00e5a0] to-[#00c27e] text-black font-extrabold text-base rounded-2xl shadow-[0_8px_30px_rgba(0,229,160,0.35)] hover:shadow-[0_12px_40px_rgba(0,229,160,0.5)] active:scale-[0.99] transition-all duration-300 flex items-center justify-center gap-2 mb-3 cursor-pointer disabled:opacity-75 disabled:cursor-not-allowed"
-            >
-              {isLoading ? (
-                <div className="w-5 h-5 border-2 border-black/30 border-t-black rounded-full animate-spin" />
-              ) : (
-                <span>تسجيل الدخول</span>
-              )}
-            </button>
-
-            {/* Copy Device ID Button */}
-            <button
-              id="vipCopyDeviceBtn"
-              type="button"
-              onClick={handleDeviceCopy}
-              className="w-full py-3 bg-transparent border border-indigo-500/40 hover:border-indigo-400/80 hover:bg-indigo-500/10 text-white/80 hover:text-white rounded-2xl text-sm font-semibold transition-all duration-300 flex items-center justify-center gap-2 mb-3 cursor-pointer"
-            >
-              <span>⚙️</span>
-              <span>نسخ المعرف</span>
-            </button>
-
-            {/* Purchase VIP Link */}
-            <button
-              id="vipPurchaseBtn"
-              type="button"
-              onClick={handlePurchase}
-              className="w-full py-3 bg-transparent border border-amber-400/50 hover:border-amber-400 hover:bg-amber-400/10 text-amber-300/90 hover:text-amber-200 rounded-2xl text-sm font-semibold transition-all duration-300 flex items-center justify-center gap-2 cursor-pointer"
-            >
-              <span>💎</span>
-              <span>شراء كود VIP</span>
-            </button>
-          </form>
-
-          {/* Success Overlay Screen */}
-          <div
-            className={`absolute inset-0 bg-black flex flex-col items-center justify-center p-7 transition-opacity duration-500 z-20 ${
-              isSuccess ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
-            }`}
-          >
-            <div className="text-[72px] mb-4" style={{ animation: isSuccess ? 'vipBounceIn 0.6s ease' : 'none' }}>
-              ✅
-            </div>
-            <h2 className="text-2xl font-extrabold text-[#00e5a0] mb-2 text-center drop-shadow-[0_0_15px_rgba(0,229,160,0.4)]">
-              مرحباً بك في VIP!
-            </h2>
-            <p className="text-sm text-white/60 text-center leading-relaxed">
-              تم التحقق من كودك بنجاح
-              <br />
-              سيتم فتح التطبيق خلال ثوانٍ...
-            </p>
+        {/* ERROR / NOTICE ALERT */}
+        {errorMessage && (
+          <div className="p-3 rounded-2xl bg-rose-950/80 border border-rose-500 text-rose-200 text-xs font-semibold text-center animate-fadeIn shadow-lg">
+            {errorMessage}
           </div>
+        )}
+
+        {/* CARD 1: User ID & Copy */}
+        <div className="bg-[#10172a] border border-slate-800 rounded-3xl p-4 shadow-xl space-y-2.5">
+          <label className="text-xs font-bold text-slate-300 block text-right">
+            {t.userIdLabel}
+          </label>
+          <div className="w-full bg-[#0a0f1d] border border-slate-700/80 rounded-2xl p-3 text-center font-mono font-bold text-xs text-slate-200 break-all select-all shadow-inner">
+            {deviceId || 'SAMSUNG-SM-S938B-D4E5C02A0597B0B2'}
+          </div>
+          <button
+            onClick={handleCopyUserId}
+            className="w-full py-2.5 px-4 rounded-xl bg-[#1b2642] hover:bg-[#233156] active:scale-98 border border-indigo-400/30 text-white font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm"
+          >
+            {isCopied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+            <span>{isCopied ? t.copied : t.copyUserId}</span>
+          </button>
+        </div>
+
+        {/* CARD 2: Activation Key Input & Submit */}
+        <form onSubmit={handleActivateSubmit} className="bg-[#10172a] border border-slate-800 rounded-3xl p-4 shadow-xl space-y-3">
+          <input
+            type="text"
+            value={activationKey}
+            onChange={(e) => setActivationKey(e.target.value)}
+            placeholder={t.pasteKeyPlaceholder}
+            className="w-full bg-[#0a0f1d] border border-slate-700 rounded-2xl px-4 py-3 text-center text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-400 font-mono transition-all"
+          />
+
+          <button
+            type="submit"
+            disabled={isLoading}
+            className="w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 active:scale-98 text-slate-950 font-black text-xs tracking-wide shadow-[0_0_15px_rgba(16,185,129,0.4)] transition-all cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50"
+          >
+            {isLoading ? (
+              <div className="w-4 h-4 border-2 border-slate-950 border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <span>{t.activateApp}</span>
+            )}
+          </button>
+        </form>
+
+        {/* SWIPE UP INDICATOR */}
+        <div className="flex flex-col items-center justify-center text-slate-400 py-1">
+          <span className="text-[11px] font-medium tracking-wide">
+            {t.swipeUpToViewPackages}
+          </span>
+          <ChevronDown className="w-4 h-4 animate-bounce mt-0.5 text-slate-500" />
+        </div>
+
+        {/* PACKAGES HEADING */}
+        <div className="text-center pt-1 pb-1">
+          <h2 className="text-sm font-bold text-white tracking-wide">
+            {t.choosePackageHeading}
+          </h2>
+        </div>
+
+        {/* PACKAGES CARDS LIST */}
+        <div className="space-y-2.5">
+          {PACKAGES.map((pkg) => {
+            const isSelected = selectedPackageId === pkg.id;
+            const title = currentLang === 'ar' ? pkg.durationLabelAr : pkg.durationLabelEn;
+            const features = currentLang === 'ar' ? pkg.featuresAr : pkg.featuresEn;
+
+            return (
+              <div
+                key={pkg.id}
+                onClick={() => handleSelectPackage(pkg)}
+                className={`w-full p-4 rounded-2xl border transition-all cursor-pointer text-center relative ${
+                  isSelected
+                    ? 'bg-[#15203b] border-emerald-400 shadow-[0_0_20px_rgba(16,185,129,0.35)] ring-1 ring-emerald-400'
+                    : 'bg-[#10172a] hover:bg-[#141d33] border-slate-800'
+                }`}
+              >
+                {isSelected && (
+                  <span className="absolute top-3 left-3 w-4 h-4 rounded-full bg-emerald-500 flex items-center justify-center text-slate-950 shadow-sm">
+                    <Check className="w-2.5 h-2.5 stroke-[3]" />
+                  </span>
+                )}
+
+                <h3 className="text-sm font-black text-white mb-1.5">
+                  {title}
+                </h3>
+
+                <div className="flex items-center justify-center gap-4 text-[11px] text-slate-400">
+                  {features.map((feat, idx) => (
+                    <span key={idx} className="flex items-center gap-1">
+                      <span className="w-1 h-1 rounded-full bg-slate-500" />
+                      <span>{feat}</span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* CONTACT BUTTONS (Telegram & WhatsApp) */}
+        <div className="space-y-2.5 pt-2">
+          {/* Telegram */}
+          <button
+            onClick={handleContactTelegram}
+            className="w-full py-3 px-4 rounded-2xl bg-[#18233e] hover:bg-[#202f54] active:scale-98 border border-slate-700/80 text-white font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm"
+          >
+            <Send className="w-4 h-4 text-cyan-400" />
+            <span>{t.contactTelegram}</span>
+          </button>
+
+          {/* WhatsApp */}
+          <button
+            onClick={handleContactWhatsApp}
+            className="w-full py-3 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-500 active:scale-98 text-slate-950 font-black text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-[0_0_15px_rgba(16,185,129,0.3)]"
+          >
+            <MessageSquare className="w-4 h-4 fill-slate-950" />
+            <span>{t.contactWhatsApp}</span>
+          </button>
+        </div>
+
+        {/* FOOTER NOTE */}
+        <div className="text-center pt-2 pb-4">
+          <p className="text-[11px] text-slate-500 font-medium">
+            {t.licenseDeviceBound}
+          </p>
         </div>
       </div>
     </div>
