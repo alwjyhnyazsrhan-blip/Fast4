@@ -26,12 +26,15 @@ class LocateGoNativeBridge(private val activity: MainActivity) {
     @JavascriptInterface
     fun getSettingsJson(): String {
         val json = JSONObject().apply {
-            put("maxDistanceKm", prefs.getFloat("max_distance_km", 2.0f).toDouble())
-            put("maxPickupDistanceKm", prefs.getFloat("max_pickup_distance_km", 2.0f).toDouble())
+            put("maxDistanceKm", prefs.getFloat("max_distance_km", 2.5f).toDouble())
+            put("maxPickupDistanceKm", prefs.getFloat("max_pickup_distance_km", 1.0f).toDouble())
             put("autoAccept", prefs.getBoolean("auto_accept", true))
             put("soundAlerts", prefs.getBoolean("sound_alerts", true))
             put("minPayoutSar", prefs.getFloat("min_payout_sar", 0.0f).toDouble())
             put("vibrationFeedback", prefs.getBoolean("vibration_feedback", true))
+            put("swipeSpeedMs", prefs.getInt("swipe_speed_ms", 100))
+            put("tapIntervalMs", prefs.getInt("tap_interval_ms", 10))
+            put("enableCustomInterval", prefs.getBoolean("enable_custom_interval", false))
             put("renderUrl", prefs.getString("render_url", "https://fast-34v4.onrender.com"))
         }
         return json.toString()
@@ -62,6 +65,15 @@ class LocateGoNativeBridge(private val activity: MainActivity) {
             }
             if (json.has("vibrationFeedback")) {
                 editor.putBoolean("vibration_feedback", json.getBoolean("vibrationFeedback"))
+            }
+            if (json.has("swipeSpeedMs")) {
+                editor.putInt("swipe_speed_ms", json.getInt("swipeSpeedMs"))
+            }
+            if (json.has("tapIntervalMs")) {
+                editor.putInt("tap_interval_ms", json.getInt("tapIntervalMs"))
+            }
+            if (json.has("enableCustomInterval")) {
+                editor.putBoolean("enable_custom_interval", json.getBoolean("enableCustomInterval"))
             }
             if (json.has("renderUrl")) {
                 val cleanUrl = json.getString("renderUrl").trim()

@@ -102,10 +102,13 @@ class LocateGoAccessibilityService : AccessibilityService() {
     private var sharedPrefsListener: SharedPreferences.OnSharedPreferenceChangeListener? = null
 
     // تخزين الإعدادات في الذاكرة الحية (Volatile) للاسترجاع الفوري في 0 نانو ثانية
-    @Volatile private var cachedMaxAllowedKm: Double = 2.0 // الحد الأقصى لمسافة العميل (التوصيل)
-    @Volatile private var cachedMaxPickupKm: Double = 2.0  // الحد الأقصى لمسافة المطعم (الاستلام)
+    @Volatile private var cachedMaxAllowedKm: Double = 2.5 // الحد الأقصى لمسافة العميل (التوصيل)
+    @Volatile private var cachedMaxPickupKm: Double = 1.0  // الحد الأقصى لمسافة المطعم (الاستلام)
     @Volatile private var cachedMinPayoutSar: Double = 0.0
     @Volatile private var cachedAutoAccept: Boolean = true
+    @Volatile private var cachedSwipeSpeedMs: Long = 100L  // سرعة السحب (100 | 150 | 200 | 250 ms)
+    @Volatile private var cachedTapIntervalMs: Long = 10L  // فاصل النقرات المتتالية (ms)
+    @Volatile private var cachedEnableCustomInterval: Boolean = false
 
     // تعابير نمطية مستهدفة بدقة عالية تدعم صيغتي: "المتجر 2.0 كم" وأيضاً "2.0 كم المتجر"
     private val pickupDistancePattern = Pattern.compile(
@@ -164,17 +167,23 @@ class LocateGoAccessibilityService : AccessibilityService() {
 
     private fun initLiveSettingsCache() {
         val prefs = getSharedPreferences("locate_go_prefs", Context.MODE_PRIVATE)
-        cachedMaxAllowedKm = prefs.getFloat("max_distance_km", 2.0f).toDouble()
-        cachedMaxPickupKm = prefs.getFloat("max_pickup_distance_km", 2.0f).toDouble()
+        cachedMaxAllowedKm = prefs.getFloat("max_distance_km", 2.5f).toDouble()
+        cachedMaxPickupKm = prefs.getFloat("max_pickup_distance_km", 1.0f).toDouble()
         cachedMinPayoutSar = prefs.getFloat("min_payout_sar", 0.0f).toDouble()
         cachedAutoAccept = prefs.getBoolean("auto_accept", true)
+        cachedSwipeSpeedMs = prefs.getInt("swipe_speed_ms", 100).toLong()
+        cachedTapIntervalMs = prefs.getInt("tap_interval_ms", 10).toLong()
+        cachedEnableCustomInterval = prefs.getBoolean("enable_custom_interval", false)
 
         sharedPrefsListener = SharedPreferences.OnSharedPreferenceChangeListener { sp, key ->
             when (key) {
-                "max_distance_km" -> cachedMaxAllowedKm = sp.getFloat("max_distance_km", 2.0f).toDouble()
-                "max_pickup_distance_km" -> cachedMaxPickupKm = sp.getFloat("max_pickup_distance_km", 2.0f).toDouble()
+                "max_distance_km" -> cachedMaxAllowedKm = sp.getFloat("max_distance_km", 2.5f).toDouble()
+                "max_pickup_distance_km" -> cachedMaxPickupKm = sp.getFloat("max_pickup_distance_km", 1.0f).toDouble()
                 "min_payout_sar" -> cachedMinPayoutSar = sp.getFloat("min_payout_sar", 0.0f).toDouble()
                 "auto_accept" -> cachedAutoAccept = sp.getBoolean("auto_accept", true)
+                "swipe_speed_ms" -> cachedSwipeSpeedMs = sp.getInt("swipe_speed_ms", 100).toLong()
+                "tap_interval_ms" -> cachedTapIntervalMs = sp.getInt("tap_interval_ms", 10).toLong()
+                "enable_custom_interval" -> cachedEnableCustomInterval = sp.getBoolean("enable_custom_interval", false)
             }
         }
         prefs.registerOnSharedPreferenceChangeListener(sharedPrefsListener)
@@ -539,7 +548,8 @@ class LocateGoAccessibilityService : AccessibilityService() {
 
         if (endX <= startX) return false
 
-        Log.i("LocateGoService", "⚡⚡ EXECUTING RELIABLE AUTO-SWIPE: ($startX, $cy) -> ($endX, $cy) [260ms]")
+        val durationMs = cachedSwipeSpeedMs.coerceIn(50L, 600L)
+        Log.i("LocateGoService", "⚡⚡ EXECUTING AUTO-SWIPE: ($startX, $cy) -> ($endX, $cy) [${durationMs}ms]")
 
         // مسار السحب الأفقي الصارم المباشر
         val swipePath = Path().apply {
@@ -547,8 +557,8 @@ class LocateGoAccessibilityService : AccessibilityService() {
             lineTo(endX, cy)
         }
 
-        // مدة السحب 260ms: المدة الفسيولوجية المثلى في نظام أندرويد لتسجيل سحب سلس بدون إلغاء
-        val stroke = GestureDescription.StrokeDescription(swipePath, 0L, 260L)
+        // مدة السحب الديناميكية المضبوطة من لوحة مساعد لوكيت (100 | 150 | 200 | 250 ms)
+        val stroke = GestureDescription.StrokeDescription(swipePath, 0L, durationMs)
         val gesture = GestureDescription.Builder().addStroke(stroke).build()
 
         val dispatched = dispatchGesture(gesture, object : GestureResultCallback() {
@@ -559,6 +569,18 @@ class LocateGoAccessibilityService : AccessibilityService() {
                 Log.w("LocateGoService", "⚠️ Swipe gesture was cancelled")
             }
         }, null)
+
+        // فاصل النقرات المتتالية المخصصة (Repeated-tap interval) إذا كانت مفعلة
+        if (cachedEnableCustomInterval) {
+            val tapDelay = cachedTapIntervalMs.coerceIn(5L, 1000L)
+            serviceScope.launch {
+                delay(tapDelay)
+                try {
+                    node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                    node.parent?.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                } catch (_: Exception) {}
+            }
+        }
 
         // سحبة تعزيزية فورية بعد 300ms إذا كان الزر ما زال ظاهراً لضمان القبول التام
         serviceScope.launch {

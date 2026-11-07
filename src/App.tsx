@@ -6,6 +6,7 @@ import { OrdersFeed } from './components/OrdersFeed';
 import { AndroidNativeControls } from './components/AndroidNativeControls';
 import { VipLockScreen } from './components/VipLockScreen';
 import { SecurityShieldBadge } from './components/SecurityShieldBadge';
+import { LocateAssistantModal } from './components/LocateAssistantModal';
 import { LocateGoSettings, LocateGoStatus, OrderItem, AppSource } from './types';
 import { INITIAL_ORDERS, APP_CONFIG, resolveAppSource } from './utils/sampleData';
 import { soundManager } from './utils/audio';
@@ -21,18 +22,22 @@ import {
 export default function App() {
   const [deviceId, setDeviceIdState] = useState<string>(getActiveDeviceId());
   const [settings, setSettings] = useState<LocateGoSettings>({
-    maxDistanceKm: 2.0,
-    maxPickupDistanceKm: 2.0,
+    maxDistanceKm: 2.5,
+    maxPickupDistanceKm: 1.0,
     autoAccept: true,
     soundAlerts: true,
     minPayoutSar: 15.0,
     vibrationFeedback: true,
+    swipeSpeedMs: 100,
+    tapIntervalMs: 10,
+    enableCustomInterval: false,
   });
 
   const [orders, setOrders] = useState<OrderItem[]>([]);
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
   const [isLocating, setIsLocating] = useState<boolean>(false);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+  const [showAssistantModal, setShowAssistantModal] = useState<boolean>(false);
 
   // VIP Access Lock Screen & Periodic Heartbeat State
   const [isVipUnlocked, setIsVipUnlocked] = useState<boolean>(false);
@@ -260,11 +265,14 @@ export default function App() {
           setSettings((prev) => ({
             ...prev,
             maxDistanceKm: parsed.maxDistanceKm ?? prev.maxDistanceKm,
-            maxPickupDistanceKm: parsed.maxPickupDistanceKm ?? prev.maxPickupDistanceKm ?? 2.0,
+            maxPickupDistanceKm: parsed.maxPickupDistanceKm ?? prev.maxPickupDistanceKm ?? 1.0,
             autoAccept: parsed.autoAccept ?? prev.autoAccept,
             soundAlerts: parsed.soundAlerts ?? prev.soundAlerts,
             minPayoutSar: parsed.minPayoutSar ?? prev.minPayoutSar,
             vibrationFeedback: parsed.vibrationFeedback ?? prev.vibrationFeedback,
+            swipeSpeedMs: parsed.swipeSpeedMs ?? prev.swipeSpeedMs ?? 100,
+            tapIntervalMs: parsed.tapIntervalMs ?? prev.tapIntervalMs ?? 10,
+            enableCustomInterval: parsed.enableCustomInterval ?? prev.enableCustomInterval ?? false,
           }));
         }
 
@@ -763,20 +771,21 @@ export default function App() {
             onUpdateSettings={handleUpdateSettings}
             onGetLiveLocation={handleGetLiveGPSLocation}
             isLocating={isLocating}
+            onOpenAssistantModal={() => setShowAssistantModal(true)}
           />
 
           {/* 4. Live Status & Diagnostics Indicator */}
           <LiveStatusIndicator
             status={status}
             maxDistanceKm={settings.maxDistanceKm}
-            maxPickupDistanceKm={settings.maxPickupDistanceKm ?? 2.0}
+            maxPickupDistanceKm={settings.maxPickupDistanceKm ?? 1.0}
           />
 
           {/* 5. Detected Orders Feed & History */}
           <OrdersFeed
             orders={orders}
             maxDistanceKm={settings.maxDistanceKm}
-            maxPickupDistanceKm={settings.maxPickupDistanceKm ?? 2.0}
+            maxPickupDistanceKm={settings.maxPickupDistanceKm ?? 1.0}
             isRunning={status.isRunning}
             onClearOrders={handleClearOrders}
             onTestCustomOrder={handleProcessOrder}
@@ -785,6 +794,37 @@ export default function App() {
         </div>
 
       </main>
+
+      {/* Floating HUD Access Button (مساعد لوكيت L.H) */}
+      <div className="fixed bottom-6 left-6 z-40">
+        <button
+          onClick={() => setShowAssistantModal(true)}
+          className="group flex items-center gap-2.5 px-4 py-2.5 rounded-full bg-gradient-to-r from-emerald-600 via-teal-600 to-indigo-700 hover:from-emerald-500 hover:to-indigo-600 text-white font-bold text-xs shadow-2xl shadow-emerald-950/70 border border-emerald-400/40 hover:scale-105 active:scale-95 transition-all cursor-pointer"
+          title="فتح واجهة مساعد لوكيت L.H"
+        >
+          <span className="w-6 h-6 rounded-full bg-emerald-400 text-slate-950 font-black text-xs flex items-center justify-center shadow-inner">
+            L.H
+          </span>
+          <span className="tracking-wide">مساعد لوكيت</span>
+          <span className="w-2 h-2 rounded-full bg-emerald-300 animate-ping" />
+        </button>
+      </div>
+
+      {/* Modal Overlay: مساعد لوكيت L.H (متطابق 100% مع شاشة الجوال) */}
+      {showAssistantModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
+          <div className="w-full max-w-md relative animate-scaleIn">
+            <LocateAssistantModal
+              settings={settings}
+              status={status}
+              onClose={() => setShowAssistantModal(false)}
+              onTogglePower={handleTogglePower}
+              onUpdateSettings={handleUpdateSettings}
+              isFloating={true}
+            />
+          </div>
+        </div>
+      )}
 
       {/* Persistent Night-Mode Driver Footer */}
       <footer className="mt-auto border-t border-slate-800/80 bg-[#080c14] py-4 px-6 text-center text-xs text-slate-400">
@@ -797,7 +837,7 @@ export default function App() {
           <div className="flex items-center gap-3 text-slate-400 font-mono">
             <span>حد العميل: {settings.maxDistanceKm} كم</span>
             <span>•</span>
-            <span>حد المطعم: {settings.maxPickupDistanceKm ?? 2.0} كم</span>
+            <span>حد المطعم: {settings.maxPickupDistanceKm ?? 1.0} كم</span>
             <span>•</span>
             <span>الطلبات: {orders.length}</span>
             <span>•</span>

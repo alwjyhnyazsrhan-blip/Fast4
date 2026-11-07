@@ -41,6 +41,9 @@ export interface LocateGoSettings {
   soundAlerts: boolean;
   minPayoutSar: number;
   vibrationFeedback: boolean;
+  swipeSpeedMs?: number;
+  tapIntervalMs?: number;
+  enableCustomInterval?: boolean;
 }
 
 export interface DriverLocation {

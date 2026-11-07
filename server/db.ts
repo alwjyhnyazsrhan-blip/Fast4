@@ -29,6 +29,9 @@ export interface DeviceSettings {
   soundAlerts: boolean;
   minPayoutSar: number;
   vibrationFeedback: boolean;
+  swipeSpeedMs: number;
+  tapIntervalMs: number;
+  enableCustomInterval: boolean;
 }
 
 export interface DriverLocation {
@@ -55,12 +58,15 @@ export interface DatabaseSchema {
 }
 
 const DEFAULT_SETTINGS: DeviceSettings = {
-  maxDistanceKm: 2.0,
-  maxPickupDistanceKm: 2.0,
+  maxDistanceKm: 2.5,
+  maxPickupDistanceKm: 1.0,
   autoAccept: true,
   soundAlerts: true,
-  minPayoutSar: 15.0,
+  minPayoutSar: 0.0,
   vibrationFeedback: true,
+  swipeSpeedMs: 100,
+  tapIntervalMs: 10,
+  enableCustomInterval: false,
 };
 
 class DeviceDatabase {

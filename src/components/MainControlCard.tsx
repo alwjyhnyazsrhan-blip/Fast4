@@ -24,6 +24,7 @@ interface MainControlCardProps {
   onUpdateSettings: (newSettings: Partial<LocateGoSettings>) => void;
   onGetLiveLocation?: () => void;
   isLocating?: boolean;
+  onOpenAssistantModal?: () => void;
 }
 
 const DELIVERY_DISTANCE_PRESETS = [1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0];
@@ -38,6 +39,7 @@ export const MainControlCard: React.FC<MainControlCardProps> = ({
   onUpdateSettings,
   onGetLiveLocation,
   isLocating,
+  onOpenAssistantModal,
 }) => {
   // Input string state for Delivery (Customer) Distance
   const [deliveryInput, setDeliveryInput] = useState(settings.maxDistanceKm.toString());
@@ -231,222 +233,194 @@ export const MainControlCard: React.FC<MainControlCardProps> = ({
           </div>
 
           {/* CONTROL BOX 1: RESTAURANT DISTANCE (مسافة المطعم / الاستلام) */}
-          <div className="bg-[#090d16] p-4 rounded-xl border border-teal-900/40 hover:border-teal-700/50 transition-all mb-3.5">
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2">
-                <span className="p-1 rounded-md bg-teal-950 text-teal-400 border border-teal-800/60">
-                  <Store className="w-3.5 h-3.5" />
-                </span>
-                <span className="text-xs font-bold text-teal-200">1. مسافة المطعم (الاستلام):</span>
-              </div>
-              <span className="text-xs px-2 py-0.5 rounded bg-teal-950 text-teal-300 font-mono border border-teal-800/40 font-bold">
-                أقصى مسافة: {settings.maxPickupDistanceKm ?? 2.0} كم
-              </span>
+          <div className="bg-[#090d16] p-4 rounded-xl border border-teal-900/40 hover:border-teal-700/50 transition-all text-center mb-3.5">
+            <div className="flex items-center justify-center gap-1.5 mb-2">
+              <span className="text-red-400 text-sm">📍</span>
+              <h3 className="text-sm font-bold text-teal-200">مسافة المطعم</h3>
             </div>
 
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-baseline gap-1.5">
-                <span className="text-3xl font-black text-white font-mono">
-                  {settings.maxPickupDistanceKm ?? 2.0}
-                </span>
-                <span className="text-xs font-bold text-teal-400">كم من موقعك للمطعم</span>
+            {/* Stepper Buttons Row: [ 1+ ] [ + ] [ 1.0 كم ] [ - ] [ -1 ] */}
+            <div className="flex items-center justify-center gap-2 mb-2 dir-ltr">
+              <button
+                id="btn-pickup-minus-one"
+                onClick={() => adjustPickupDistance(-1.0)}
+                className="w-10 h-9 rounded-lg bg-[#182346] hover:bg-[#223060] active:scale-95 border border-indigo-400/30 font-bold text-xs text-slate-100 flex items-center justify-center transition-all cursor-pointer shadow-sm"
+                title="تقليل 1 كم"
+              >
+                -1
+              </button>
+              <button
+                id="btn-decrease-pickup"
+                onClick={() => adjustPickupDistance(-0.5)}
+                className="w-10 h-9 rounded-lg bg-[#182346] hover:bg-[#223060] active:scale-95 border border-indigo-400/30 font-bold text-sm text-slate-100 flex items-center justify-center transition-all cursor-pointer shadow-sm"
+                title="تقليل نصف كم"
+              >
+                -
+              </button>
+
+              {/* Center Value Pill */}
+              <div className="min-w-[95px] h-9 px-2.5 rounded-lg bg-[#0e152a] border border-cyan-500/50 flex items-center justify-center shadow-inner font-mono font-extrabold text-sm text-white tracking-wider">
+                {(settings.maxPickupDistanceKm ?? 1.0).toFixed(1)} كم
               </div>
 
-              {/* Stepper buttons and input */}
-              <div className="flex items-center gap-1.5">
-                <button
-                  id="btn-decrease-pickup"
-                  onClick={() => adjustPickupDistance(-0.5)}
-                  className="w-9 h-9 rounded-lg bg-slate-800 hover:bg-slate-700 active:scale-95 border border-slate-700 text-slate-200 font-bold text-base flex items-center justify-center transition-all cursor-pointer"
-                  title="إنقاص نصف كم"
-                >
-                  -
-                </button>
-                <div className="relative">
-                  <input
-                    id="input-pickup-distance"
-                    type="number"
-                    step="0.1"
-                    min="0.2"
-                    max="20"
-                    value={pickupInput}
-                    onChange={handlePickupInputChange}
-                    className="w-20 h-9 text-center bg-slate-900 border border-teal-800/60 rounded-lg text-white font-mono font-bold text-sm focus:outline-none focus:border-teal-400"
-                  />
-                  <span className="absolute left-1.5 top-2 text-[9px] text-slate-500 font-mono pointer-events-none">
-                    كم
-                  </span>
-                </div>
-                <button
-                  id="btn-increase-pickup"
-                  onClick={() => adjustPickupDistance(0.5)}
-                  className="w-9 h-9 rounded-lg bg-slate-800 hover:bg-slate-700 active:scale-95 border border-slate-700 text-slate-200 font-bold text-base flex items-center justify-center transition-all cursor-pointer"
-                  title="زيادة نصف كم"
-                >
-                  +
-                </button>
-              </div>
+              <button
+                id="btn-increase-pickup"
+                onClick={() => adjustPickupDistance(0.5)}
+                className="w-10 h-9 rounded-lg bg-[#182346] hover:bg-[#223060] active:scale-95 border border-indigo-400/30 font-bold text-sm text-slate-100 flex items-center justify-center transition-all cursor-pointer shadow-sm"
+                title="زيادة نصف كم"
+              >
+                +
+              </button>
+              <button
+                id="btn-pickup-plus-one"
+                onClick={() => adjustPickupDistance(1.0)}
+                className="w-10 h-9 rounded-lg bg-[#182346] hover:bg-[#223060] active:scale-95 border border-indigo-400/30 font-bold text-xs text-slate-100 flex items-center justify-center transition-all cursor-pointer shadow-sm"
+                title="زيادة 1 كم"
+              >
+                1+
+              </button>
             </div>
 
-            {/* Slider */}
-            <input
-              id="slider-pickup-distance"
-              type="range"
-              min="0.5"
-              max="6.0"
-              step="0.1"
-              value={settings.maxPickupDistanceKm ?? 2.0}
-              onChange={(e) => {
-                const val = parseFloat(e.target.value);
-                setPickupInput(val.toString());
-                if (onUpdateMaxPickupDistance) onUpdateMaxPickupDistance(val);
-                else onUpdateSettings({ maxPickupDistanceKm: val });
-              }}
-              className="w-full h-1.5 mt-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-teal-400"
-            />
-
-            {/* Quick Presets for Restaurant */}
-            <div className="flex flex-wrap gap-1.5 mt-2.5">
-              {PICKUP_DISTANCE_PRESETS.map((km) => {
-                const isSelected = (settings.maxPickupDistanceKm ?? 2.0) === km;
-                return (
-                  <button
-                    key={km}
-                    onClick={() => {
-                      setPickupInput(km.toString());
-                      if (onUpdateMaxPickupDistance) onUpdateMaxPickupDistance(km);
-                      else onUpdateSettings({ maxPickupDistanceKm: km });
-                    }}
-                    className={`px-2 py-0.5 rounded text-[11px] font-mono transition-all border ${
-                      isSelected
-                        ? 'bg-teal-500 text-slate-950 border-teal-400 font-bold shadow-sm'
-                        : 'bg-slate-800/70 hover:bg-slate-700 text-slate-300 border-slate-700/50'
-                    }`}
-                  >
-                    {km} كم
-                  </button>
-                );
-              })}
-            </div>
+            <p className="text-[11px] text-slate-400">تعديل المسافة المسموحة بينك وبين المطعم</p>
           </div>
 
           {/* CONTROL BOX 2: CUSTOMER DISTANCE (مسافة العميل / الوجهة) */}
-          <div className="bg-[#090d16] p-4 rounded-xl border border-emerald-900/40 hover:border-emerald-700/50 transition-all">
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2">
-                <span className="p-1 rounded-md bg-emerald-950 text-emerald-400 border border-emerald-800/60">
-                  <UserCheck className="w-3.5 h-3.5" />
-                </span>
-                <span className="text-xs font-bold text-emerald-200">2. مسافة العميل (التوصيل):</span>
-              </div>
-              <span className="text-xs px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 font-mono border border-emerald-800/40 font-bold">
-                أقصى مسافة: {settings.maxDistanceKm} كم
-              </span>
+          <div className="bg-[#090d16] p-4 rounded-xl border border-emerald-900/40 hover:border-emerald-700/50 transition-all text-center">
+            <div className="flex items-center justify-center gap-1.5 mb-2">
+              <span className="text-red-400 text-sm">📍</span>
+              <h3 className="text-sm font-bold text-emerald-200">مسافة العميل</h3>
             </div>
 
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-baseline gap-1.5">
-                <span className="text-3xl font-black text-white font-mono">
-                  {settings.maxDistanceKm}
-                </span>
-                <span className="text-xs font-bold text-emerald-400">كم من المطعم للعميل</span>
+            {/* Stepper Buttons Row: [ 1+ ] [ + ] [ 2.5 كم ] [ - ] [ -1 ] */}
+            <div className="flex items-center justify-center gap-2 mb-2 dir-ltr">
+              <button
+                id="btn-delivery-minus-one"
+                onClick={() => adjustDeliveryDistance(-1.0)}
+                className="w-10 h-9 rounded-lg bg-[#182346] hover:bg-[#223060] active:scale-95 border border-indigo-400/30 font-bold text-xs text-slate-100 flex items-center justify-center transition-all cursor-pointer shadow-sm"
+                title="تقليل 1 كم"
+              >
+                -1
+              </button>
+              <button
+                id="btn-decrease-delivery"
+                onClick={() => adjustDeliveryDistance(-0.5)}
+                className="w-10 h-9 rounded-lg bg-[#182346] hover:bg-[#223060] active:scale-95 border border-indigo-400/30 font-bold text-sm text-slate-100 flex items-center justify-center transition-all cursor-pointer shadow-sm"
+                title="تقليل نصف كم"
+              >
+                -
+              </button>
+
+              {/* Center Value Pill */}
+              <div className="min-w-[95px] h-9 px-2.5 rounded-lg bg-[#0e152a] border border-cyan-500/50 flex items-center justify-center shadow-inner font-mono font-extrabold text-sm text-white tracking-wider">
+                {(settings.maxDistanceKm ?? 2.5).toFixed(1)} كم
               </div>
 
-              {/* Stepper buttons and input */}
-              <div className="flex items-center gap-1.5">
-                <button
-                  id="btn-decrease-delivery"
-                  onClick={() => adjustDeliveryDistance(-0.5)}
-                  className="w-9 h-9 rounded-lg bg-slate-800 hover:bg-slate-700 active:scale-95 border border-slate-700 text-slate-200 font-bold text-base flex items-center justify-center transition-all cursor-pointer"
-                  title="إنقاص نصف كم"
-                >
-                  -
-                </button>
-                <div className="relative">
-                  <input
-                    id="input-delivery-distance"
-                    type="number"
-                    step="0.1"
-                    min="0.5"
-                    max="25"
-                    value={deliveryInput}
-                    onChange={handleDeliveryInputChange}
-                    className="w-20 h-9 text-center bg-slate-900 border border-emerald-800/60 rounded-lg text-white font-mono font-bold text-sm focus:outline-none focus:border-emerald-400"
-                  />
-                  <span className="absolute left-1.5 top-2 text-[9px] text-slate-500 font-mono pointer-events-none">
-                    كم
-                  </span>
-                </div>
-                <button
-                  id="btn-increase-delivery"
-                  onClick={() => adjustDeliveryDistance(0.5)}
-                  className="w-9 h-9 rounded-lg bg-slate-800 hover:bg-slate-700 active:scale-95 border border-slate-700 text-slate-200 font-bold text-base flex items-center justify-center transition-all cursor-pointer"
-                  title="زيادة نصف كم"
-                >
-                  +
-                </button>
-              </div>
+              <button
+                id="btn-increase-delivery"
+                onClick={() => adjustDeliveryDistance(0.5)}
+                className="w-10 h-9 rounded-lg bg-[#182346] hover:bg-[#223060] active:scale-95 border border-indigo-400/30 font-bold text-sm text-slate-100 flex items-center justify-center transition-all cursor-pointer shadow-sm"
+                title="زيادة نصف كم"
+              >
+                +
+              </button>
+              <button
+                id="btn-delivery-plus-one"
+                onClick={() => adjustDeliveryDistance(1.0)}
+                className="w-10 h-9 rounded-lg bg-[#182346] hover:bg-[#223060] active:scale-95 border border-indigo-400/30 font-bold text-xs text-slate-100 flex items-center justify-center transition-all cursor-pointer shadow-sm"
+                title="زيادة 1 كم"
+              >
+                1+
+              </button>
             </div>
 
-            {/* Slider */}
-            <input
-              id="slider-delivery-distance"
-              type="range"
-              min="0.5"
-              max="10.0"
-              step="0.1"
-              value={settings.maxDistanceKm}
-              onChange={(e) => {
-                const val = parseFloat(e.target.value);
-                setDeliveryInput(val.toString());
-                onUpdateMaxDistance(val);
-              }}
-              className="w-full h-1.5 mt-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-400"
-            />
+            <p className="text-[11px] text-slate-400">تعديل المسافة المسموحة بين المطعم والعميل</p>
+          </div>
+        </div>
 
-            {/* Quick Presets for Customer */}
-            <div className="flex flex-wrap gap-1.5 mt-2.5">
-              {DELIVERY_DISTANCE_PRESETS.map((km) => {
-                const isSelected = settings.maxDistanceKm === km;
-                return (
-                  <button
-                    key={km}
-                    onClick={() => {
-                      setDeliveryInput(km.toString());
-                      onUpdateMaxDistance(km);
-                    }}
-                    className={`px-2 py-0.5 rounded text-[11px] font-mono transition-all border ${
-                      isSelected
-                        ? 'bg-emerald-500 text-slate-950 border-emerald-400 font-bold shadow-sm'
-                        : 'bg-slate-800/70 hover:bg-slate-700 text-slate-300 border-slate-700/50'
-                    }`}
-                  >
-                    {km} كم
-                  </button>
-                );
-              })}
+        {/* 3. سرعة السحب & فاصل النقرات المتتالية (طراز مساعد لوكيت L.H) */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+          {/* سرعة السحب */}
+          <div className="p-3.5 bg-[#090d16] rounded-xl border border-indigo-500/30 text-center">
+            <h4 className="text-xs font-bold text-slate-200 mb-1">سرعة السحب</h4>
+            <div className="text-lg font-mono font-extrabold text-cyan-400 my-0.5">
+              {settings.swipeSpeedMs ?? 100} ms
+            </div>
+            <div className="grid grid-cols-4 gap-1 my-1.5">
+              {[100, 150, 200, 250].map((preset) => (
+                <button
+                  key={preset}
+                  onClick={() => onUpdateSettings({ swipeSpeedMs: preset })}
+                  className={`py-1 rounded text-[11px] font-mono font-bold transition-all cursor-pointer ${
+                    (settings.swipeSpeedMs ?? 100) === preset
+                      ? 'bg-cyan-500 text-slate-950 font-bold shadow-sm'
+                      : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
+                  }`}
+                >
+                  {preset}
+                </button>
+              ))}
+            </div>
+            <p className="text-[10px] text-slate-400">
+              100 | 150 | 200 | 250 – الأقل أسرع، والأعلى أنسب للجوالات الضعيفة
+            </p>
+          </div>
+
+          {/* فاصل النقرات المتتالية */}
+          <div className="p-3.5 bg-[#090d16] rounded-xl border border-indigo-500/30 flex flex-col justify-between">
+            <h4 className="text-xs font-bold text-slate-200 text-center">
+              فاصل النقرات المتتالية | Repeated-tap Interval
+            </h4>
+            <div className="flex items-center justify-between text-[11px] text-slate-300 my-1.5">
+              <span>تفعيل القيمة المخصصة</span>
+              <button
+                onClick={() =>
+                  onUpdateSettings({ enableCustomInterval: !(settings.enableCustomInterval ?? false) })
+                }
+                type="button"
+                className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full p-0.5 transition-colors ${
+                  settings.enableCustomInterval ? 'bg-cyan-500' : 'bg-slate-700'
+                }`}
+              >
+                <span
+                  className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white transition ${
+                    settings.enableCustomInterval ? 'translate-x-0' : '-translate-x-4'
+                  }`}
+                />
+              </button>
+            </div>
+            <div className="flex items-center justify-center gap-1.5 dir-ltr">
+              <input
+                type="number"
+                min={5}
+                max={1000}
+                disabled={!settings.enableCustomInterval}
+                value={settings.tapIntervalMs ?? 10}
+                onChange={(e) =>
+                  onUpdateSettings({ tapIntervalMs: Math.max(5, Math.min(1000, Number(e.target.value))) })
+                }
+                className={`w-18 h-7 text-center rounded-lg font-mono font-bold text-xs border ${
+                  settings.enableCustomInterval
+                    ? 'bg-[#0e152a] text-cyan-300 border-cyan-500/50'
+                    : 'bg-slate-800/60 text-slate-500 border-slate-700 cursor-not-allowed'
+                }`}
+              />
+              <span className="text-[10px] text-slate-400 font-mono">ms (5-1000)</span>
             </div>
           </div>
         </div>
 
-        {/* 3. STRICT SWIPE-TO-ACCEPT SPEED & SAFETY GUARANTEE */}
-        <div className="p-3 bg-teal-950/30 rounded-xl border border-teal-500/40 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
-          <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-teal-400 animate-ping shrink-0" />
-            <div>
-              <span className="text-white font-bold block">
-                السحب التلقائي الفائق (90ms) لشريط «اسحب لقبول الطلب» ⚡
-              </span>
-              <span className="text-[11px] text-teal-200">
-                يتم سحب مقبض القبول حصرياً بأقصى سرعة عتادية، ومحصن تماماً ضد لمس أزرار الرفض Reject أو أيقونات GPS الخريطة.
-              </span>
-            </div>
-          </div>
-          <div className="shrink-0 flex items-center gap-1.5 bg-teal-900/60 px-2 py-1 rounded text-[10px] text-teal-200 font-mono">
-            <CheckCircle2 className="w-3.5 h-3.5 text-teal-400" />
-            <span>حماية الأيقونات مفعلة</span>
-          </div>
-        </div>
+        {/* 4. زر فتح واجهة مساعد لوكيت L.H العائمة */}
+        {onOpenAssistantModal && (
+          <button
+            onClick={onOpenAssistantModal}
+            className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-emerald-500/20 via-cyan-500/20 to-indigo-500/20 hover:from-emerald-500/30 hover:to-indigo-500/30 border border-emerald-500/40 text-emerald-300 font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm group"
+          >
+            <span className="w-5 h-5 rounded-full bg-emerald-500 text-slate-950 font-bold text-[10px] flex items-center justify-center">
+              L.H
+            </span>
+            <span>فتح نافذة «مساعد لوكيت L.H» العائمة المتطابقة مع الجوال</span>
+          </button>
+        )}
       </div>
     </div>
   );
