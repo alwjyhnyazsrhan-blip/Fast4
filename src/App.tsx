@@ -25,7 +25,7 @@ import {
 export default function App() {
   const [deviceId, setDeviceIdState] = useState<string>(getActiveDeviceId());
   const [currentLang, setCurrentLang] = useState<Language>('ar');
-  const [activePlanName, setActivePlanName] = useState<string>('تجريبي 3 أيام');
+  const [activePlanName, setActivePlanName] = useState<string>('تجربة 3 أيام');
   const [subscriptionDate, setSubscriptionDate] = useState<string>('07/11/2026');
   const [expiryDate, setExpiryDate] = useState<string>('08/11/2026');
   const [showAdvancedTools, setShowAdvancedTools] = useState<boolean>(false);

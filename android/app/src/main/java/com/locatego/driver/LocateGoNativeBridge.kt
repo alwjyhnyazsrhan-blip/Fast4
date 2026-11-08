@@ -294,4 +294,52 @@ class LocateGoNativeBridge(private val activity: MainActivity) {
         }
         return json.toString()
     }
+
+    /**
+     * فتح محادثة واتساب بشكل مباشر وآمن عبر Intent أندرويد لتفادي خطأ net::ERR_UNKNOWN_URL_SCHEME
+     */
+    @JavascriptInterface
+    fun openWhatsApp(phone: String, message: String): Boolean {
+        return try {
+            val cleanPhone = phone.replace("+", "").replace(" ", "").trim()
+            val encodedMsg = Uri.encode(message)
+            val uri = Uri.parse("whatsapp://send?phone=$cleanPhone&text=$encodedMsg")
+            val intent = Intent(Intent.ACTION_VIEW, uri).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            activity.startActivity(intent)
+            true
+        } catch (e: Exception) {
+            try {
+                val cleanPhone = phone.replace("+", "").replace(" ", "").trim()
+                val webUri = Uri.parse("https://wa.me/$cleanPhone?text=${Uri.encode(message)}")
+                val intent = Intent(Intent.ACTION_VIEW, webUri).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+                activity.startActivity(intent)
+                true
+            } catch (err: Exception) {
+                activity.runOnUiThread {
+                    Toast.makeText(activity, "يرجى التأكد من تثبيت تطبيق واتساب", Toast.LENGTH_SHORT).show()
+                }
+                false
+            }
+        }
+    }
+
+    /**
+     * فتح أي رابط خارجي (تليجرام أو غيره) عبر Intent أندرويد خارجي
+     */
+    @JavascriptInterface
+    fun openUrl(url: String): Boolean {
+        return try {
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            activity.startActivity(intent)
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
 }

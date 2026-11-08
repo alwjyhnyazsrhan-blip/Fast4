@@ -23,37 +23,37 @@ interface PackagePlan {
 
 const PACKAGES: PackagePlan[] = [
   {
+    id: '1_month',
+    priceSar: '',
+    durationLabelAr: 'شهر',
+    durationLabelEn: '1 Month',
+    featuresAr: ['دعم مستمر', 'تحسين في الأداء', 'تحديثات'],
+    featuresEn: ['Continuous Support', 'Performance Improvement', 'Regular Updates'],
+    days: 30,
+  },
+  {
+    id: '2_months',
+    priceSar: '',
+    durationLabelAr: 'شهرين',
+    durationLabelEn: '2 Months',
+    featuresAr: ['دعم مستمر', 'تحسين في الأداء', 'تحديثات'],
+    featuresEn: ['Continuous Support', 'Performance Improvement', 'Regular Updates'],
+    days: 60,
+  },
+  {
     id: '3_months',
-    priceSar: 30,
-    durationLabelAr: '30 ريال / 3 أشهر',
-    durationLabelEn: '30 SAR / 3 Months',
+    priceSar: '',
+    durationLabelAr: '3 أشهر',
+    durationLabelEn: '3 Months',
     featuresAr: ['دعم مستمر', 'تحسين في الأداء', 'تحديثات'],
     featuresEn: ['Continuous Support', 'Performance Improvement', 'Regular Updates'],
     days: 90,
   },
   {
-    id: '1_year',
-    priceSar: 100,
-    durationLabelAr: '100 ريال / سنة',
-    durationLabelEn: '100 SAR / 1 Year',
-    featuresAr: ['دعم مستمر', 'تحسين في الأداء', 'تحديثات'],
-    featuresEn: ['Continuous Support', 'Performance Improvement', 'Regular Updates'],
-    days: 365,
-  },
-  {
-    id: '3_years',
-    priceSar: 250,
-    durationLabelAr: '250 ريال / 3 سنوات',
-    durationLabelEn: '250 SAR / 3 Years',
-    featuresAr: ['دعم مستمر', 'تحسين في الأداء', 'تحديثات'],
-    featuresEn: ['Continuous Support', 'Performance Improvement', 'Regular Updates'],
-    days: 1095,
-  },
-  {
     id: 'trial_3_days',
-    priceSar: 'تجريبي',
-    durationLabelAr: 'تجريبي 3 أيام',
-    durationLabelEn: 'Trial 3 Days',
+    priceSar: '',
+    durationLabelAr: 'تجربة 3 أيام',
+    durationLabelEn: 'Trial (3 Days)',
     featuresAr: ['دعم مستمر', 'تحسين في الأداء', 'تحديثات'],
     featuresEn: ['Continuous Support', 'Performance Improvement', 'Regular Updates'],
     days: 3,
@@ -156,7 +156,15 @@ export const VipLockScreen: React.FC<VipLockScreenProps> = ({
 
   // Contact via Telegram
   const handleContactTelegram = () => {
-    window.open('https://t.me/Wsxderfpo', '_blank');
+    const url = 'https://t.me/Wsxderfpo';
+    try {
+      const bridge = (window as any).LocateGoNative;
+      if (bridge && typeof bridge.openUrl === 'function') {
+        const handled = bridge.openUrl(url);
+        if (handled) return;
+      }
+    } catch {}
+    window.open(url, '_blank');
   };
 
   // Contact via WhatsApp with exact message template from Video 1
@@ -170,8 +178,22 @@ export const VipLockScreen: React.FC<VipLockScreenProps> = ({
         ? `مرحباً، أريد الاستفسار أو الاشتراك\n\nUser ID: ${deviceId}\n\nالباقة المختارة: ${planLabel}`
         : `Hello, I would like to inquire or subscribe\n\nUser ID: ${deviceId}\n\nSelected Package: ${planLabel}`;
 
-    const url = `https://api.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(text)}`;
-    window.open(url, '_blank');
+    // 1. Try Native Android Bridge first to launch Intent directly and avoid ERR_UNKNOWN_URL_SCHEME
+    try {
+      const bridge = (window as any).LocateGoNative;
+      if (bridge && typeof bridge.openWhatsApp === 'function') {
+        const handled = bridge.openWhatsApp(phone, text);
+        if (handled) return;
+      }
+    } catch {}
+
+    // 2. Fallback to wa.me URL
+    const url = `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
+    try {
+      window.open(url, '_blank');
+    } catch {
+      window.location.href = url;
+    }
   };
 
   // Verify and unlock

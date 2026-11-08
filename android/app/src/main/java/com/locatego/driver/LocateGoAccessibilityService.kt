@@ -246,47 +246,63 @@ class LocateGoAccessibilityService : AccessibilityService() {
 
         val joinedContent = scanResult.texts.joinToString(" ")
 
-        // 1. استخراج مسافة العميل / الوجهة (Delivery Distance)
-        var deliveryDistKm = scanResult.directDeliveryKm
-        if (deliveryDistKm == null) {
-            val deliveryMatcher = deliveryDistancePattern.matcher(joinedContent)
-            if (deliveryMatcher.find()) {
-                val g = deliveryMatcher.group(1) ?: deliveryMatcher.group(2)
-                deliveryDistKm = g?.replace(',', '.')?.toDoubleOrNull()
-            }
-        }
+        // 1. استرجاع أحدث قيم الإعدادات الحية من SharedPreferences مباشرة لضمان عدم تأخر أي تعديل قام به السائق
+        val prefs = getSharedPreferences("locate_go_prefs", Context.MODE_PRIVATE)
+        val maxAllowedDelivery = prefs.getFloat("max_distance_km", cachedMaxAllowedKm.toFloat()).toDouble()
+        val maxAllowedPickup = prefs.getFloat("max_pickup_distance_km", cachedMaxPickupKm.toFloat()).toDouble()
+        val minPayoutSar = prefs.getFloat("min_payout_sar", cachedMinPayoutSar.toFloat()).toDouble()
 
-        // 2. استخراج مسافة المطعم / الاستلام (Pickup Distance)
-        var pickupDistKm = scanResult.directPickupKm
-        if (pickupDistKm == null) {
-            val pickupMatcher = pickupDistancePattern.matcher(joinedContent)
-            if (pickupMatcher.find()) {
-                val g = pickupMatcher.group(1) ?: pickupMatcher.group(2)
-                pickupDistKm = g?.replace(',', '.')?.toDoubleOrNull()
-            }
-        }
-
-        // 3. استخراج المسافات من القائمة العامة إذا لم تُحدد صراحة
+        // 2. استخراج كافة المسافات الرقمية الموجودة في نصوص بطاقة العرض
         val allDists = extractAllDistancesFromTexts(scanResult.texts)
-        if (pickupDistKm == null && allDists.isNotEmpty()) {
-            pickupDistKm = allDists[0]
+
+        // 🛑 فحص حاسم وفوري: إذا كان أي رقم مسافة معروض على البطاقة يتجاوز الحد الأقصى لمسافة العميل،
+        // يُرفض الطلب فوراً ويُمنع السحب أو القبول منعاً باتاً (مثل 6.9 كم أو 9.9 كم أو 4.6 كم عندما يكون الحد 3.0 كم)
+        if (allDists.any { it > maxAllowedDelivery }) {
+            val excessiveDist = allDists.first { it > maxAllowedDelivery }
+            Log.w("LocateGoService", "⛔ REJECTED: Distance $excessiveDist km exceeds max allowed delivery ($maxAllowedDelivery km). Order skipped!")
+            val deduplicationKey = "${scanResult.texts.hashCode()}|$excessiveDist"
+            val now = System.currentTimeMillis()
+            if (processedOrdersCache[deduplicationKey]?.let { now - it < 2000 } != true) {
+                processedOrdersCache[deduplicationKey] = now
+                notifyDriverRejectedAsync()
+            }
+            return
         }
-        if (deliveryDistKm == null) {
-            if (allDists.size >= 2) {
-                deliveryDistKm = allDists[1]
-            } else if (allDists.size == 1 && pickupDistKm != allDists[0]) {
-                deliveryDistKm = allDists[0]
+
+        // 3. تحديد مسافة المطعم / الاستلام (Pickup) ومسافة العميل / الوجهة (Delivery) بدقة
+        var deliveryDistKm: Double? = scanResult.directDeliveryKm
+        var pickupDistKm: Double? = scanResult.directPickupKm
+
+        if (allDists.size >= 2) {
+            // في كافة تطبيقات التوصيل: المسافة الأقرب للمندوب هي مسافة المطعم/المتجر، والمسافة الأبعد هي مسافة العميل
+            val sortedDists = allDists.sorted()
+            if (pickupDistKm == null) {
+                pickupDistKm = sortedDists.first()
+            }
+            if (deliveryDistKm == null) {
+                deliveryDistKm = sortedDists.last()
+            }
+        } else if (allDists.size == 1) {
+            val singleDist = allDists[0]
+            val hasStoreContext = joinedContent.contains("متجر") || joinedContent.contains("مطعم") || joinedContent.contains("موقعك")
+            val hasCustomerContext = joinedContent.contains("عميل") || joinedContent.contains("زبون") || joinedContent.contains("توصيل") || joinedContent.contains("وجهة")
+
+            if (hasCustomerContext && !hasStoreContext) {
+                deliveryDistKm = singleDist
+            } else if (hasStoreContext && !hasCustomerContext) {
+                pickupDistKm = singleDist
+            } else {
+                deliveryDistKm = singleDist
             }
         }
 
-        var generalDistKm: Double? = null
-        val genMatcher = generalDistancePattern.matcher(joinedContent)
-        if (genMatcher.find()) {
-            generalDistKm = genMatcher.group(1)?.replace(',', '.')?.toDoubleOrNull()
+        // إذا لم تتوفر أي مسافات مسجلة على البطاقة، نمنع القبول الأعمى تماماً
+        if (allDists.isEmpty() && deliveryDistKm == null && pickupDistKm == null) {
+            Log.w("LocateGoService", "⚠️ No distances detected, refusing blind auto-accept.")
+            return
         }
 
-        val targetEvaluationDistanceKm = deliveryDistKm ?: generalDistKm ?: pickupDistKm ?: return
-        if (targetEvaluationDistanceKm <= 0.0) return
+        val targetEvaluationDistanceKm = deliveryDistKm ?: pickupDistKm ?: allDists.firstOrNull() ?: 1.0
 
         // 4. استخراج أجر التوصيل
         var payoutSar = scanResult.directPayoutSar ?: 18.0
@@ -312,28 +328,22 @@ class LocateGoAccessibilityService : AccessibilityService() {
         val now = System.currentTimeMillis()
         if (processedOrdersCache[deduplicationKey]?.let { now - it < 1200 } == true) return
 
-        val maxAllowedDelivery = cachedMaxAllowedKm
-        val maxAllowedPickup = cachedMaxPickupKm
-        val minPayoutSar = cachedMinPayoutSar
-
         // =========================================================================
-        // قاعدة الفحص والقبول الصارمة والدقيقة:
-        // 1. مسافة العميل / الوجهة <= الحد الأقصى لمسافة العميل (3.0 كم أو أقل)
-        // 2. مسافة المطعم / الاستلام <= الحد الأقصى لمسافة المطعم (1.5 كم أو أقل)
-        // 3. عروض التوصيل المجاني أو المدفوعة أونلاين تعتبر مقبولة تلقائياً
+        // القواعد الصارمة والقطعية للموافقة على الطلب:
+        // 1. مسافة العميل يجب أن تكون <= الحد الأقصى لمسافة العميل (مثلاً 3.0 كم)
+        // 2. مسافة المطعم يجب أن تكون <= الحد الأقصى لمسافة المطعم (مثلاً 1.5 كم)
+        // 3. أجر التوصيل مقبول أو العرض مدفوع/مجاني مسبقاً
         // =========================================================================
-        val isDeliveryWithinLimit = if (deliveryDistKm != null) {
-            deliveryDistKm <= maxAllowedDelivery
-        } else if (generalDistKm != null) {
-            generalDistKm <= maxAllowedDelivery
-        } else {
-            true
+        val isDeliveryWithinLimit = when {
+            deliveryDistKm != null -> deliveryDistKm <= maxAllowedDelivery
+            allDists.isNotEmpty() -> allDists.all { it <= maxAllowedDelivery }
+            else -> false
         }
 
-        val isPickupWithinLimit = if (pickupDistKm != null) {
-            pickupDistKm <= maxAllowedPickup
-        } else {
-            true
+        val isPickupWithinLimit = when {
+            pickupDistKm != null -> pickupDistKm <= maxAllowedPickup
+            allDists.size >= 2 -> allDists.minOrNull()?.let { it <= maxAllowedPickup } ?: false
+            else -> true
         }
 
         val isFreeDeliveryOffer = joinedContent.contains("مجاني") || joinedContent.contains("مجانا") || joinedContent.contains("توصيل مجاني") || joinedContent.contains("مدفوعة")
@@ -652,12 +662,16 @@ class LocateGoAccessibilityService : AccessibilityService() {
 
     private fun extractAllDistancesFromTexts(texts: List<String>): List<Double> {
         val result = mutableListOf<Double>()
-        val kmPattern = Pattern.compile("(\\d+(?:[.,]\\d+)?)\\s*(?:كم|كيلو|km|k\\.m)", Pattern.CASE_INSENSITIVE or Pattern.UNICODE_CASE)
+        val kmPattern = Pattern.compile("([0-9\\u0660-\\u0669]+(?:[.,][0-9\\u0660-\\u0669]+)?)\\s*(?:كم|كيلو|km|k\\.m)", Pattern.CASE_INSENSITIVE or Pattern.UNICODE_CASE)
         for (item in texts) {
             val m = kmPattern.matcher(item)
             while (m.find()) {
-                m.group(1)?.replace(',', '.')?.toDoubleOrNull()?.let {
-                    if (it > 0.0) result.add(it)
+                val raw = m.group(1) ?: continue
+                val normalized = raw.map { ch ->
+                    if (ch in '\u0660'..'\u0669') ('0' + (ch - '\u0660')) else ch
+                }.joinToString("").replace(',', '.')
+                normalized.toDoubleOrNull()?.let {
+                    if (it >= 0.0) result.add(it)
                 }
             }
         }

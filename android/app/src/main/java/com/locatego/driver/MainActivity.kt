@@ -189,7 +189,34 @@ class MainActivity : AppCompatActivity() {
                         startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
                         return true
                     } catch (e: Exception) {
-                        // ignore if telegram not installed
+                        try {
+                            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                            return true
+                        } catch (_: Exception) {}
+                    }
+                }
+                if (url.startsWith("whatsapp://") ||
+                    url.startsWith("https://wa.me/") ||
+                    url.startsWith("https://api.whatsapp.com/")) {
+                    try {
+                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                        }
+                        startActivity(intent)
+                        return true
+                    } catch (e: Exception) {
+                        try {
+                            val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                            }
+                            startActivity(browserIntent)
+                            return true
+                        } catch (_: Exception) {
+                            runOnUiThread {
+                                Toast.makeText(this@MainActivity, "يرجى تثبيت تطبيق واتساب", Toast.LENGTH_SHORT).show()
+                            }
+                            return true
+                        }
                     }
                 }
                 return super.shouldOverrideUrlLoading(view, request)

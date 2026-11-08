@@ -2,6 +2,7 @@ import express, { Request, Response } from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import { db, RealOrder } from "./server/db";
+import { subscriptionDb } from "./server/subscriptionDb";
 import {
   securityHeadersMiddleware,
   rateLimitMiddleware,
@@ -60,10 +61,25 @@ async function startServer() {
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
     res.setHeader(
       "Access-Control-Allow-Headers",
-      "Content-Type, Authorization, User-Agent, X-Device-Id, Device-Id, X-Signature, X-Timestamp, X-Nonce, X-Client-Shield"
+      "Content-Type, Authorization, User-Agent, X-Device-Id, Device-Id, X-Signature, X-Timestamp, X-Nonce, X-Client-Shield, X-Admin-Key"
     );
     if (_req.method === "OPTIONS") {
       return res.sendStatus(204);
+    }
+    next();
+  });
+
+  // 🛡️ حظر قطعي لأي محاولة تصفح أو تحميل لملفات الإدارة أو التعليمات من قبل مستخدمي التطبيق
+  app.use((req, res, next) => {
+    const lowerUrl = req.path.toLowerCase();
+    if (
+      lowerUrl.includes("admin-portal") ||
+      lowerUrl.endsWith(".md") ||
+      lowerUrl.includes("readme") ||
+      lowerUrl.includes("subscriptions.json") ||
+      lowerUrl.includes("locatego_db.json")
+    ) {
+      return res.status(404).send("Not Found");
     }
     next();
   });
@@ -136,6 +152,7 @@ async function startServer() {
   });
 
   // ==========================================
+  // ==========================================
   // 1.8 VIP LICENSE VERIFICATION & HEARTBEAT ENDPOINT
   // ==========================================
   const FIREBASE_DB_URL = "https://appprotector-79e9c-default-rtdb.firebaseio.com";
@@ -143,6 +160,7 @@ async function startServer() {
   const handleLicenseCheck = async (req: Request, res: Response) => {
     const deviceId = extractDeviceId(req);
     const code = (req.query.code || req.body?.code || "").toString().trim().toUpperCase();
+    const clientDevice = (req.query.deviceId || req.body?.deviceId || deviceId || "").toString().trim();
 
     if (!code) {
       return res.status(400).json({
@@ -153,6 +171,30 @@ async function startServer() {
       });
     }
 
+    // 1. الأولوية الأولى: الفحص المباشر في قاعدة بيانات الاشتراكات المحلية subscriptionDb
+    const localMatch = subscriptionDb.getCode(code);
+    if (localMatch) {
+      const result = subscriptionDb.verifyOrRedeem(code, clientDevice);
+      if (!result.isValid) {
+        // إيقاف خدمات المندوب على السيرفر في حال عدم الصلاحية
+        db.toggleRunning(deviceId, false);
+      }
+      return res.json({
+        isValid: result.isValid,
+        valid: result.isValid,
+        reason: result.reason,
+        message: result.message,
+        code: result.code || localMatch.code,
+        planName: result.planName || localMatch.planName,
+        expiryDate: result.expiryDate || localMatch.expiryDate,
+        remainingHours: result.remainingHours,
+        usedBy: result.usedBy,
+        source: "local_subscription_db",
+        checkedAt: new Date().toISOString(),
+      });
+    }
+
+    // 2. الأولوية الثانية: الفحص في قاعدة البيانات السحابية (Firebase RTDB) كبديل متوافق مع الأكواد القديمة
     try {
       const response = await fetch(`${FIREBASE_DB_URL}/activation_codes.json`);
       if (!response.ok) {
@@ -165,13 +207,12 @@ async function startServer() {
       );
 
       if (!match) {
-        // Force-stop device processes on server
         db.toggleRunning(deviceId, false);
         return res.json({
           isValid: false,
           valid: false,
           reason: "not_found",
-          message: "❌ كود الترخيص غير موجود في قاعدة البيانات",
+          message: "❌ كود الترخيص غير مسجل في قاعدة البيانات",
         });
       }
 
@@ -215,9 +256,8 @@ async function startServer() {
         }
       }
 
-      // Check device binding with support for multiple device identifiers (partition ID & VIP hardware fingerprint)
+      // Check device binding
       const matchDevice = (match.used_by || "").trim();
-      const clientDevice = (req.query.deviceId || req.body?.deviceId || deviceId || "").toString().trim();
       const vipHeader = (req.headers["x-vip-device-id"] || req.query.vipDeviceId || req.body?.vipDeviceId || "").toString().trim();
 
       if (matchDevice && matchDevice !== "") {
@@ -287,6 +327,181 @@ async function startServer() {
       return res.json({ data: arr });
     } catch {
       return res.status(500).json({ error: "Database proxy error" });
+    }
+  });
+
+  // ==========================================
+  // 1.9 ADMIN SUBSCRIPTION CONTROL PANEL API
+  // لوحة تحكم وإدارة أكواد الاشتراكات وقاعدة البيانات للمشرف
+  // محمية بمفتاح أمان المشرف السري (Admin Secret Key)
+  // أي طلب غير مصرح به يعيد خطأ 404 لخداع أي محاولة اختراق وإخفاء وجود المسارات
+  // ==========================================
+  const ADMIN_SECRET_KEY = process.env.ADMIN_SECRET_KEY || "locate_go_master_key_9977";
+
+  const requireAdminAuth = (req: Request, res: Response, next: any) => {
+    const providedKey = req.headers["x-admin-key"] || req.query.adminKey || (req.body && req.body.adminKey);
+    if (!providedKey || providedKey !== ADMIN_SECRET_KEY) {
+      return res.status(404).json({ error: "Not Found" });
+    }
+    next();
+  };
+
+  // تطبيق التحقق الأمني السري على كافة مسارات الإدارة
+  app.use("/api/admin", requireAdminAuth);
+
+  // استرجاع كافة أكواد الاشتراكات والإحصائيات والأجهزة المسجلة
+  app.get("/api/admin/subscriptions", (_req: Request, res: Response) => {
+    try {
+      const codes = subscriptionDb.getAllCodes();
+      const stats = subscriptionDb.getStats();
+      const activeDevices = db.getAllDevicesSummary();
+
+      return res.json({
+        success: true,
+        codes,
+        stats,
+        activeDevices,
+      });
+    } catch (err) {
+      return res.status(500).json({ success: false, error: "فشل استرجاع بيانات الاشتراكات" });
+    }
+  });
+
+  // إنشاء كود اشتراك جديد مرتبط بمعرف جهاز المندوب والمدة المحددة
+  app.post("/api/admin/subscriptions/generate", (req: Request, res: Response) => {
+    try {
+      const {
+        code,
+        planName,
+        duration,
+        durationDays,
+        targetDeviceId,
+        driverName,
+        driverPhone,
+        notes,
+        startMode,
+      } = req.body;
+
+      // إذا وُضع كود مخصص، نتحقق من عدم تكراره
+      if (code && subscriptionDb.getCode(code)) {
+        return res.status(400).json({
+          success: false,
+          error: "كود الاشتراك هذا مستخدم بالفعل، يرجى اختيار كود آخر أو تركه فارغاً لتوليد كود تلقائي",
+        });
+      }
+
+      const createdCode = subscriptionDb.createCode({
+        code,
+        planName,
+        duration,
+        durationDays: typeof durationDays === "number" ? durationDays : undefined,
+        targetDeviceId,
+        driverName,
+        driverPhone,
+        notes,
+        startMode: startMode || "on_first_activation",
+      });
+
+      return res.status(201).json({
+        success: true,
+        code: createdCode,
+        message: `تم إنشاء كود الاشتراك (${createdCode.code}) بنجاح`,
+      });
+    } catch (err: any) {
+      return res.status(500).json({
+        success: false,
+        error: err?.message || "فشل إنشاء كود الاشتراك",
+      });
+    }
+  });
+
+  // تمديد مدة اشتراك كود (+أيام)
+  app.post("/api/admin/subscriptions/:id/extend", (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const days = Number(req.body.days) || 30;
+      const updated = subscriptionDb.extendCode(id, days);
+      if (!updated) {
+        return res.status(404).json({ success: false, error: "كود الاشتراك غير موجود" });
+      }
+      return res.json({
+        success: true,
+        code: updated,
+        message: `تم تمديد صلاحية الكود بنجاح بمقدار (${days}) يوماً`,
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err?.message || "فشل التمديد" });
+    }
+  });
+
+  // تعطيل / حظر كود اشتراك
+  app.post("/api/admin/subscriptions/:id/revoke", (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const updated = subscriptionDb.revokeCode(id);
+      if (!updated) {
+        return res.status(404).json({ success: false, error: "كود الاشتراك غير موجود" });
+      }
+      return res.json({
+        success: true,
+        code: updated,
+        message: "تم تعطيل صلاحية كود الاشتراك بنجاح",
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err?.message || "فشل التعطيل" });
+    }
+  });
+
+  // إعادة تنشيط كود اشتراك
+  app.post("/api/admin/subscriptions/:id/activate", (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const updated = subscriptionDb.activateCode(id);
+      if (!updated) {
+        return res.status(404).json({ success: false, error: "كود الاشتراك غير موجود" });
+      }
+      return res.json({
+        success: true,
+        code: updated,
+        message: "تم تنشيط كود الاشتراك بنجاح",
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err?.message || "فشل التنشيط" });
+    }
+  });
+
+  // فك ارتباط كود الاشتراك من الجهاز لنقله لجوال آخر
+  app.post("/api/admin/subscriptions/:id/unbind", (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const updated = subscriptionDb.unbindDevice(id);
+      if (!updated) {
+        return res.status(404).json({ success: false, error: "كود الاشتراك غير موجود" });
+      }
+      return res.json({
+        success: true,
+        code: updated,
+        message: "تم فك ارتباط الجهاز بنجاح، يمكن الآن تفعيل الكود على أي جوال جديد",
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err?.message || "فشل فك الارتباط" });
+    }
+  });
+
+  // حذف كود اشتراك
+  app.delete("/api/admin/subscriptions/:id", (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const deleted = subscriptionDb.deleteCode(id);
+      if (!deleted) {
+        return res.status(404).json({ success: false, error: "كود الاشتراك غير موجود" });
+      }
+      return res.json({
+        success: true,
+        message: "تم حذف كود الاشتراك بنجاح",
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err?.message || "فشل الحذف" });
     }
   });
 
